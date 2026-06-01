@@ -1,0 +1,10 @@
+# LiveKit Cloud Agent deploy config.
+# Run `lk agent create` once to populate `project_id` and `id` from your account,
+# then `lk agent deploy` to ship.
+
+[project]
+subdomain = "your-project"   # replace with your LiveKit Cloud project subdomain
+
+[agent]
+name = "mecfs-interviewer"
+# id = "auto-filled by `lk agent create`"

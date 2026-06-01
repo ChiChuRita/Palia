@@ -1,56 +1,74 @@
-# Welcome to your Expo app 👋
+# Palia
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A voice-first companion for people living with **ME/CFS** and **Long COVID**.
 
-## Get started
+Most symptom-tracking apps fail the same way: they demand manual logging at exactly
+the moment a patient is too crashed to log. Palia's wedge is a calm, conversational
+voice check-in that gathers symptom and activity data with **zero typing** — built
+for brain-fog days when tapping through a form is too much.
 
-1. Install dependencies
+## What it does
 
-   ```bash
-   npm install
-   ```
+- **Daily voice check-in** — a gentle, ME/CFS-aware interviewer asks how you're
+  doing, listens, and records symptoms and activities in your own words. No streaks,
+  no goals, no pressure.
+- **Passive health context** — with permission, Palia reads Apple HealthKit
+  (HRV, resting heart rate, sleep, steps) and lets the agent reference it softly
+  ("your HRV is a bit lower than usual — anything feel off?"). Read-only, never written.
+- **Today & history views** — a quiet energy-envelope summary and a week-at-a-glance
+  recap. Edit anything the agent got wrong.
+- **Bilingual** — English and German.
 
-2. Start the app
+## Architecture
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+Expo iOS app  ──WebRTC──>  LiveKit Cloud  <──joins──  Agent worker (Node.js)
+   │                                                      │
+   └── Convex action mints LiveKit JWT                    └── OpenAI gpt-realtime-2
+       (carries locale + health snapshot)                     voice interviewer
+                                                              │
+                          Convex backend  <──HTTPS (shared secret)──┘
+                          sessions · transcripts · symptoms · activities
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- **App** — Expo 56 / React Native 0.85 / Expo Router, `@livekit/react-native`,
+  `@kingstinct/react-native-healthkit`.
+- **Backend** — [Convex](https://convex.dev) (schema, mutations, queries, HTTP
+  endpoint for agent writebacks, JWT minting).
+- **Voice agent** — `@livekit/agents` + OpenAI Realtime, deployed to LiveKit Cloud.
+  Lives in [`agent/`](./agent) as a separate Node project.
 
-### Other setup steps
+HealthKit data is read **on-demand** on the device and attached to the LiveKit token
+metadata — no cron, no background fetch, no health data stored server-side.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Project layout
 
-## Learn more
+| Path | What |
+| --- | --- |
+| `src/` | Expo app — screens, components, hooks, i18n |
+| `convex/` | Convex backend functions and schema |
+| `agent/` | LiveKit voice agent worker (Node.js) |
+| `HEALTHKIT.md` | HealthKit field tier mapping (voice vs. passive vs. hybrid) |
 
-To learn more about developing your project with Expo, look at the following resources:
+## Getting started
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm install
 
-## Join the community
+# Start the Convex backend (dev deployment)
+npx convex dev
 
-Join our community of developers creating universal apps.
+# Run the voice agent worker locally
+cd agent && npm install && npm run dev
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+# Build & run the iOS app (custom dev client — LiveKit can't run in Expo Go)
+npx expo run:ios
+```
+
+Environment variables (LiveKit, OpenAI, and the agent shared secret) live in Convex
+env vars and the agent's local `.env` — never committed.
+
+## Status
+
+Early MVP. iOS-only for now (HealthKit); Android Health Connect is a later
+consideration. No auth yet — the device is the user for the prototype.

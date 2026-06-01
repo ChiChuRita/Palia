@@ -52,21 +52,104 @@ metadata — no cron, no background fetch, no health data stored server-side.
 
 ## Getting started
 
+This walks you from a fresh clone to a working voice loop. Budget ~20 minutes the
+first time (most of it is the iOS native build and creating the three accounts).
+
+For the deep runbook — deploying the agent to LiveKit Cloud, troubleshooting, etc. —
+see [`SETUP.md`](./SETUP.md).
+
+### Prerequisites
+
+- **Node.js 18+** and npm
+- **macOS + Xcode** with an iOS simulator (or a real iPhone) — LiveKit needs a custom
+  dev client and **cannot run in Expo Go**
+- **Homebrew** (for the LiveKit CLI)
+- Accounts/keys for the three services Palia talks to:
+  - **[Convex](https://convex.dev)** — backend (free tier is fine)
+  - **[LiveKit Cloud](https://cloud.livekit.io)** — WebRTC transport + agent hosting
+    (create a project in an **EU/Frankfurt** region)
+  - **[OpenAI](https://platform.openai.com)** — Realtime voice model (`gpt-realtime-2`)
+
+### 1. Install dependencies
+
 ```bash
+git clone https://github.com/ChiChuRita/Palia.git
+cd Palia
 npm install
-
-# Start the Convex backend (dev deployment)
-npx convex dev
-
-# Run the voice agent worker locally
-cd agent && npm install && npm run dev
-
-# Build & run the iOS app (custom dev client — LiveKit can't run in Expo Go)
-npx expo run:ios
+cd agent && npm install && cd ..
 ```
 
+### 2. Wire up Convex
+
+```bash
+# Links this checkout to a Convex dev deployment and writes .env.local
+npx convex dev --once
+```
+
+Then set the backend secrets (the app mints LiveKit tokens server-side, so these live
+in Convex, never in the app):
+
+```bash
+npx convex env set LIVEKIT_URL wss://your-project.livekit.cloud
+npx convex env set LIVEKIT_API_KEY   <livekit-key>
+npx convex env set LIVEKIT_API_SECRET <livekit-secret>
+# Shared secret the agent uses to write back to Convex — generate one:
+npx convex env set AGENT_SHARED_SECRET "$(openssl rand -hex 32)"
+```
+
+LiveKit key/secret/URL come from your LiveKit Cloud project's **Settings → Keys**.
+
+### 3. Configure the voice agent
+
+```bash
+cd agent
+cp .env.example .env
+```
+
+Fill in `agent/.env`:
+
+| Var | Value |
+| --- | --- |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | same as the Convex values above |
+| `OPENAI_API_KEY` | your OpenAI key |
+| `CONVEX_HTTP_URL` | your deployment's `.convex.site` URL (see `EXPO_PUBLIC_CONVEX_SITE_URL` in `.env.local`) |
+| `AGENT_SHARED_SECRET` | **must match** the value you set in Convex above |
+
+### 4. Build the iOS dev client (first time only)
+
+```bash
+npm run ios:rebuild   # expo prebuild --clean && expo run:ios — ~5 min
+```
+
+Re-run this only when you add a native module or change `app.json` plugins. JS changes
+hot-reload after that.
+
+### 5. Run the whole stack
+
+```bash
+npm run dev   # starts Convex + agent worker + Expo metro, one terminal, colored logs
+```
+
+Open the app, tap **Start**, and within ~3s you should hear *"Hi. I'm here. How are
+you doing right now?"*. Mention a symptom ("brain fog") and an activity ("walked to
+the kitchen"), then tap **End**. Check the Convex dashboard — `sessions`,
+`transcriptMessages`, `symptoms`, and `activities` tables should have new rows.
+
+> **Note:** the iOS *simulator* has no microphone and no real HealthKit data. For a
+> true end-to-end test (mic + Apple Watch metrics), run on a physical iPhone.
+
+### Handy scripts
+
+| Command | What |
+| --- | --- |
+| `npm run dev` | Convex + agent + Expo, all at once |
+| `npm run ios:rebuild` | Clean prebuild + native iOS build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | `expo lint` |
+| `npm run deploy:agent` | Deploy the agent to LiveKit Cloud |
+
 Environment variables (LiveKit, OpenAI, and the agent shared secret) live in Convex
-env vars and the agent's local `.env` — never committed.
+env vars and the agent's local `.env` — both gitignored, never committed.
 
 ## Status
 

@@ -1,10 +1,5 @@
 import { v } from "convex/values";
-import {
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-} from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 
 export const start = mutation({
   args: { deviceId: v.string() },
@@ -158,8 +153,7 @@ export const correctLastActivity = internalMutation({
     if (args.category !== undefined) patch.category = args.category;
     if (args.userWords !== undefined) patch.userWords = args.userWords;
     if (args.exertion !== undefined) patch.exertion = args.exertion;
-    if (args.durationMinutes !== undefined)
-      patch.durationMinutes = args.durationMinutes;
+    if (args.durationMinutes !== undefined) patch.durationMinutes = args.durationMinutes;
     if (Object.keys(patch).length === 0) return last._id;
     await ctx.db.patch(last._id, patch);
     return last._id;
@@ -215,8 +209,7 @@ export const editActivity = mutation({
     const patch: Record<string, unknown> = {};
     if (args.category !== undefined) patch.category = args.category;
     if (args.exertion !== undefined) patch.exertion = args.exertion;
-    if (args.durationMinutes !== undefined)
-      patch.durationMinutes = args.durationMinutes;
+    if (args.durationMinutes !== undefined) patch.durationMinutes = args.durationMinutes;
     if (Object.keys(patch).length === 0) return;
     await ctx.db.patch(args.activityId, patch);
   },
@@ -318,9 +311,7 @@ export const reapStaleActive = internalMutation({
     const cutoff = Date.now() - 10 * 60 * 1000; // 10 minutes
     const stale = await ctx.db
       .query("sessions")
-      .withIndex("by_status_started", (q) =>
-        q.eq("status", "active").lt("startedAt", cutoff),
-      )
+      .withIndex("by_status_started", (q) => q.eq("status", "active").lt("startedAt", cutoff))
       .take(50);
     for (const s of stale) {
       await ctx.db.patch(s._id, {
@@ -388,10 +379,7 @@ export const todaySnapshot = query({
     const todays = await ctx.db
       .query("sessions")
       .withIndex("by_device_started", (q) =>
-        q
-          .eq("deviceId", args.deviceId)
-          .gte("startedAt", args.dayStart)
-          .lt("startedAt", args.dayEnd),
+        q.eq("deviceId", args.deviceId).gte("startedAt", args.dayStart).lt("startedAt", args.dayEnd)
       )
       .order("desc")
       .take(50);
@@ -402,14 +390,13 @@ export const todaySnapshot = query({
         q
           .eq("deviceId", args.deviceId)
           .gte("startedAt", yesterdayStart)
-          .lt("startedAt", args.dayStart),
+          .lt("startedAt", args.dayStart)
       )
       .order("desc")
       .take(50);
 
     const todayCompleted = todays.find((s) => s.status === "completed") ?? null;
-    const yesterdayCompleted =
-      yesterdays.find((s) => s.status === "completed") ?? null;
+    const yesterdayCompleted = yesterdays.find((s) => s.status === "completed") ?? null;
 
     return {
       today: todayCompleted,
@@ -439,7 +426,7 @@ export const weeklyAggregates = query({
     const sessions = await ctx.db
       .query("sessions")
       .withIndex("by_device_started", (q) =>
-        q.eq("deviceId", args.deviceId).gte("startedAt", args.sinceMs),
+        q.eq("deviceId", args.deviceId).gte("startedAt", args.sinceMs)
       )
       .order("desc")
       .take(200);
@@ -494,8 +481,7 @@ export const weeklyAggregates = query({
       actMap.set(a.category, e);
     }
 
-    const avg = (xs: number[]) =>
-      xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
     const sleepHoursValues = recentCompleted
       .map((s) => s.sleepHours)
@@ -544,7 +530,7 @@ export const restStreak = query({
     const sessions = await ctx.db
       .query("sessions")
       .withIndex("by_device_started", (q) =>
-        q.eq("deviceId", args.deviceId).gte("startedAt", lookback),
+        q.eq("deviceId", args.deviceId).gte("startedAt", lookback)
       )
       .order("desc")
       .take(300);

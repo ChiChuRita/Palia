@@ -43,11 +43,11 @@ metadata — no cron, no background fetch, no health data stored server-side.
 
 ## Project layout
 
-| Path | What |
-| --- | --- |
-| `src/` | Expo app — screens, components, hooks, i18n |
-| `convex/` | Convex backend functions and schema |
-| `agent/` | LiveKit voice agent worker (Node.js) |
+| Path           | What                                                        |
+| -------------- | ----------------------------------------------------------- |
+| `src/`         | Expo app — screens, components, hooks, i18n                 |
+| `convex/`      | Convex backend functions and schema                         |
+| `agent/`       | LiveKit voice agent worker (Node.js)                        |
 | `HEALTHKIT.md` | HealthKit field tier mapping (voice vs. passive vs. hybrid) |
 
 ## Getting started
@@ -108,12 +108,12 @@ cp .env.example .env
 
 Fill in `agent/.env`:
 
-| Var | Value |
-| --- | --- |
-| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | same as the Convex values above |
-| `OPENAI_API_KEY` | your OpenAI key |
-| `CONVEX_HTTP_URL` | your deployment's `.convex.site` URL (see `EXPO_PUBLIC_CONVEX_SITE_URL` in `.env.local`) |
-| `AGENT_SHARED_SECRET` | **must match** the value you set in Convex above |
+| Var                                                      | Value                                                                                    |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | same as the Convex values above                                                          |
+| `OPENAI_API_KEY`                                         | your OpenAI key                                                                          |
+| `CONVEX_HTTP_URL`                                        | your deployment's `.convex.site` URL (see `EXPO_PUBLIC_CONVEX_SITE_URL` in `.env.local`) |
+| `AGENT_SHARED_SECRET`                                    | **must match** the value you set in Convex above                                         |
 
 ### 4. Build the iOS dev client (first time only)
 
@@ -130,23 +130,23 @@ hot-reload after that.
 npm run dev   # starts Convex + agent worker + Expo metro, one terminal, colored logs
 ```
 
-Open the app, tap **Start**, and within ~3s you should hear *"Hi. I'm here. How are
-you doing right now?"*. Mention a symptom ("brain fog") and an activity ("walked to
+Open the app, tap **Start**, and within ~3s you should hear _"Hi. I'm here. How are
+you doing right now?"_. Mention a symptom ("brain fog") and an activity ("walked to
 the kitchen"), then tap **End**. Check the Convex dashboard — `sessions`,
 `transcriptMessages`, `symptoms`, and `activities` tables should have new rows.
 
-> **Note:** the iOS *simulator* has no microphone and no real HealthKit data. For a
+> **Note:** the iOS _simulator_ has no microphone and no real HealthKit data. For a
 > true end-to-end test (mic + Apple Watch metrics), run on a physical iPhone.
 
 ### Handy scripts
 
-| Command | What |
-| --- | --- |
-| `npm run dev` | Convex + agent + Expo, all at once |
-| `npm run ios:rebuild` | Clean prebuild + native iOS build |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | `expo lint` |
-| `npm run deploy:agent` | Deploy the agent to LiveKit Cloud |
+| Command                | What                               |
+| ---------------------- | ---------------------------------- |
+| `npm run dev`          | Convex + agent + Expo, all at once |
+| `npm run ios:rebuild`  | Clean prebuild + native iOS build  |
+| `npm run typecheck`    | `tsc --noEmit`                     |
+| `npm run lint`         | `expo lint`                        |
+| `npm run deploy:agent` | Deploy the agent to LiveKit Cloud  |
 
 Environment variables (LiveKit, OpenAI, and the agent shared secret) live in Convex
 env vars and the agent's local `.env` — both gitignored, never committed.

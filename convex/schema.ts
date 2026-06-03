@@ -13,11 +13,7 @@ export default defineSchema({
     // Both optional — the agent may not get to either on a given day.
     sleepHours: v.optional(v.number()), // 0–14
     hadPEMToday: v.optional(v.boolean()),
-    status: v.union(
-      v.literal("active"),
-      v.literal("completed"),
-      v.literal("abandoned"),
-    ),
+    status: v.union(v.literal("active"), v.literal("completed"), v.literal("abandoned")),
   })
     .index("by_device_started", ["deviceId", "startedAt"])
     .index("by_status_started", ["status", "startedAt"]),

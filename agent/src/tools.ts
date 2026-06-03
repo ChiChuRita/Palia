@@ -1,6 +1,6 @@
 // Tool handlers — each POSTs to the Convex /agent-event HTTP endpoint.
 
-import type { ActivityCategory, SymptomCategory } from './taxonomy.js';
+import type { ActivityCategory, SymptomCategory } from "./taxonomy.js";
 
 type Json = Record<string, unknown>;
 
@@ -42,15 +42,13 @@ async function postEvent(body: Json) {
       lastError = err;
     }
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("agent-event failed");
+  throw lastError instanceof Error ? lastError : new Error("agent-event failed");
 }
 
 export async function appendTranscript(
   sessionId: string,
   role: "user" | "assistant",
-  text: string,
+  text: string
 ) {
   if (!text.trim()) return;
   await postEvent({ type: "transcript", sessionId, role, text });
@@ -63,7 +61,7 @@ export async function recordSymptom(
     userWords: string;
     severity?: number;
     note?: string;
-  },
+  }
 ) {
   await postEvent({ type: "symptom", sessionId, ...args });
 }
@@ -75,7 +73,7 @@ export async function recordActivity(
     userWords: string;
     exertion?: number;
     durationMinutes?: number;
-  },
+  }
 ) {
   await postEvent({ type: "activity", sessionId, ...args });
 }
@@ -87,7 +85,7 @@ export async function correctLastSymptom(
     userWords?: string;
     severity?: number;
     note?: string;
-  },
+  }
 ) {
   await postEvent({ type: "correct_last_symptom", sessionId, ...args });
 }
@@ -99,7 +97,7 @@ export async function correctLastActivity(
     userWords?: string;
     exertion?: number;
     durationMinutes?: number;
-  },
+  }
 ) {
   await postEvent({ type: "correct_last_activity", sessionId, ...args });
 }
@@ -109,7 +107,7 @@ export async function recordSessionContext(
   args: {
     sleepHours?: number;
     hadPEMToday?: boolean;
-  },
+  }
 ) {
   if (args.sleepHours === undefined && args.hadPEMToday === undefined) return;
   await postEvent({ type: "session_context", sessionId, ...args });
@@ -121,7 +119,7 @@ export async function finalize(
     summary: string;
     energyScore: number;
     flags?: string[];
-  },
+  }
 ) {
   await postEvent({ type: "finalize", sessionId, ...args });
 }
@@ -156,7 +154,7 @@ const EMPTY_SNAPSHOT: HealthSnapshot = {
  * tech-speak ("no HealthKit data available") leaking into the conversation.
  */
 export function formatHealthContext(
-  snapshot: HealthSnapshot | null | undefined,
+  snapshot: HealthSnapshot | null | undefined
 ): Record<string, unknown> {
   const s = snapshot ?? EMPTY_SNAPSHOT;
   return {

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -9,29 +9,29 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
-} from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { TodaySummary } from '@/components/today-summary';
-import { BottomTabInset, Spacing } from '@/constants/theme';
-import { useReduceMotion } from '@/hooks/use-reduce-motion';
-import { useTheme } from '@/hooks/use-theme';
-import { useVoiceSession } from '@/hooks/use-voice-session';
-import { useTranslation } from '@/i18n';
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { TodaySummary } from "@/components/today-summary";
+import { BottomTabInset, Spacing } from "@/constants/theme";
+import { useReduceMotion } from "@/hooks/use-reduce-motion";
+import { useTheme } from "@/hooks/use-theme";
+import { useVoiceSession } from "@/hooks/use-voice-session";
+import { useTranslation } from "@/i18n";
 
 function borderForState(state: string, fallback: string): string {
   switch (state) {
-    case 'connecting':
-    case 'preparing':
-    case 'ending':
-      return '#e6b800'; // amber — not ready for user input yet
-    case 'listening':
-    case 'speaking':
-      return '#3ba76e'; // green — call is live
-    case 'error':
-      return '#c44'; // red
+    case "connecting":
+    case "preparing":
+    case "ending":
+      return "#e6b800"; // amber — not ready for user input yet
+    case "listening":
+    case "speaking":
+      return "#3ba76e"; // green — call is live
+    case "error":
+      return "#c44"; // red
     default:
       return fallback;
   }
@@ -43,8 +43,8 @@ export function VoiceCheckIn() {
   const { t } = useTranslation();
   const { state, error, start, end, agentLevel } = useVoiceSession();
 
-  const active = state !== 'idle' && state !== 'error';
-  const buttonLabel = active ? t('common.end') : t('common.start');
+  const active = state !== "idle" && state !== "error";
+  const buttonLabel = active ? t("common.end") : t("common.start");
 
   // ---- Animations ----
   //
@@ -62,7 +62,7 @@ export function VoiceCheckIn() {
   const reactive = useSharedValue(1);
 
   useEffect(() => {
-    if (reduceMotion || state !== 'speaking') {
+    if (reduceMotion || state !== "speaking") {
       reactive.value = withTiming(1, {
         duration: 300,
         easing: Easing.out(Easing.cubic),
@@ -78,7 +78,7 @@ export function VoiceCheckIn() {
   }, [agentLevel, state, reduceMotion]);
 
   useEffect(() => {
-    if (reduceMotion || state !== 'idle') {
+    if (reduceMotion || state !== "idle") {
       cancelAnimation(breath);
       breath.value = withTiming(1, { duration: 400 });
       return;
@@ -92,10 +92,10 @@ export function VoiceCheckIn() {
         withTiming(1, {
           duration: 2000,
           easing: Easing.inOut(Easing.sin),
-        }),
+        })
       ),
       -1,
-      false,
+      false
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, reduceMotion]);
@@ -103,7 +103,7 @@ export function VoiceCheckIn() {
   // Detect the transition into 'listening' (mic hand-off) and play one pulse.
   useEffect(() => {
     if (reduceMotion) return;
-    if (state === 'listening') {
+    if (state === "listening") {
       handOff.value = 0;
       handOff.value = withTiming(1, {
         duration: 700,
@@ -134,10 +134,7 @@ export function VoiceCheckIn() {
               style={[
                 styles.pulse,
                 {
-                  borderColor: borderForState(
-                    'listening',
-                    theme.backgroundSelected,
-                  ),
+                  borderColor: borderForState("listening", theme.backgroundSelected),
                 },
                 pulseStyle,
               ]}
@@ -152,14 +149,12 @@ export function VoiceCheckIn() {
                   {
                     backgroundColor: theme.backgroundElement,
                     opacity: pressed ? 0.85 : 1,
-                    borderColor: borderForState(
-                      state,
-                      theme.backgroundSelected,
-                    ),
-                    borderWidth: state === 'idle' ? 2 : 4,
+                    borderColor: borderForState(state, theme.backgroundSelected),
+                    borderWidth: state === "idle" ? 2 : 4,
                     transform: [{ scale: pressed ? 0.97 : 1 }],
                   },
-                ]}>
+                ]}
+              >
                 <ThemedText type="subtitle" style={styles.orbLabel}>
                   {buttonLabel}
                 </ThemedText>
@@ -180,7 +175,7 @@ export function VoiceCheckIn() {
 
         <View style={styles.footer}>
           <ThemedText type="small" themeColor="textSecondary">
-            {t('voice.footerCalm')}
+            {t("voice.footerCalm")}
           </ThemedText>
         </View>
       </SafeAreaView>
@@ -197,34 +192,34 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   center: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: Spacing.four,
     flexGrow: 1,
   },
   orbWrapper: {
     width: 220,
     height: 220,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   orb: {
     width: 220,
     height: 220,
     borderRadius: 110,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 2,
   },
   pulse: {
-    position: 'absolute',
+    position: "absolute",
     width: 220,
     height: 220,
     borderRadius: 110,
     borderWidth: 3,
   },
   orbLabel: { fontWeight: 500 },
-  stateLabel: { textAlign: 'center' },
-  error: { color: '#c44', textAlign: 'center' },
-  footer: { alignItems: 'center', paddingBottom: Spacing.two },
+  stateLabel: { textAlign: "center" },
+  error: { color: "#c44", textAlign: "center" },
+  footer: { alignItems: "center", paddingBottom: Spacing.two },
 });

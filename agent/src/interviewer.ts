@@ -167,20 +167,16 @@ ${RUBRIC_DE}
 - Alarmiert klingen, medizinischer Rat, „Wie kann ich helfen".
 `.trim();
 
-export type Locale = 'en' | 'de';
+export type Locale = "en" | "de";
 
 export function promptForLocale(locale: string | null | undefined): string {
-  return locale === 'de'
-    ? INTERVIEWER_SYSTEM_PROMPT_DE
-    : INTERVIEWER_SYSTEM_PROMPT_EN;
+  return locale === "de" ? INTERVIEWER_SYSTEM_PROMPT_DE : INTERVIEWER_SYSTEM_PROMPT_EN;
 }
 
 // Kick instruction = the last thing the model reads before speaking. Hard-
 // codes the exact opening line for maximum reliability against drift.
-export function kickInstructionForLocale(
-  locale: string | null | undefined,
-): string {
-  return locale === 'de'
+export function kickInstructionForLocale(locale: string | null | undefined): string {
+  return locale === "de"
     ? 'Sprich jetzt zuerst. Sag GENAU diese Worte und nichts anderes davor: „Hallo. Ich bin da. Wie geht\'s dir gerade?" Dann warte. KEINE Begrüßung wie „Wie kann ich helfen".'
     : 'Speak first now. Say EXACTLY these words and nothing before them: "Hi. I\'m here. How are you doing right now?" Then wait. NO greeting like "How can I help you".';
 }

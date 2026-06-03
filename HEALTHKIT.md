@@ -19,16 +19,16 @@ These should be read on every check-in via `react-native-health` and either
 (a) passed into `get_health_context` so the agent can reference them, or
 (b) surfaced silently on the Today view.
 
-| HKQuantityTypeIdentifier | Why for ME/CFS | When to read |
-|---|---|---|
-| `heartRateVariabilitySDNN` | Single best autonomic proxy. Patients track this religiously (Visible's wedge is HRV-via-camera). Low HRV vs personal baseline predicts PEM by 24–48h. | Overnight sample, last 7 days for trend |
-| `restingHeartRate` | Elevated RHR + low HRV is the canonical PEM early-warning duet | Last 14 days |
-| `sleepAnalysis` (category) | Duration + stage breakdown. Patients sleep 9h and still feel wrecked → distinct from healthy sleep architecture. | Last night |
-| `appleSleepingWristTemperature` | Subfebrile / temperature dysregulation is a CCC neuroendocrine criterion. Deviation from personal baseline = immune flare. | Last 7 nights |
-| `respiratoryRate` | Elevated overnight respiratory rate correlates with viral reactivation episodes in ME/CFS (still emerging research) | Last 7 nights |
-| `stepCount` | Objective exertion load. Crashed patients drop to <500 steps/day. | Yesterday + 7-day avg |
-| `walkingHeartRateAverage` | Inappropriate tachycardia on minimal exertion = OI/POTS signal | Yesterday |
-| `oxygenSaturation` | LC patients sometimes desaturate on exertion (silent hypoxia residual) | Last 24h |
+| HKQuantityTypeIdentifier        | Why for ME/CFS                                                                                                                                         | When to read                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `heartRateVariabilitySDNN`      | Single best autonomic proxy. Patients track this religiously (Visible's wedge is HRV-via-camera). Low HRV vs personal baseline predicts PEM by 24–48h. | Overnight sample, last 7 days for trend |
+| `restingHeartRate`              | Elevated RHR + low HRV is the canonical PEM early-warning duet                                                                                         | Last 14 days                            |
+| `sleepAnalysis` (category)      | Duration + stage breakdown. Patients sleep 9h and still feel wrecked → distinct from healthy sleep architecture.                                       | Last night                              |
+| `appleSleepingWristTemperature` | Subfebrile / temperature dysregulation is a CCC neuroendocrine criterion. Deviation from personal baseline = immune flare.                             | Last 7 nights                           |
+| `respiratoryRate`               | Elevated overnight respiratory rate correlates with viral reactivation episodes in ME/CFS (still emerging research)                                    | Last 7 nights                           |
+| `stepCount`                     | Objective exertion load. Crashed patients drop to <500 steps/day.                                                                                      | Yesterday + 7-day avg                   |
+| `walkingHeartRateAverage`       | Inappropriate tachycardia on minimal exertion = OI/POTS signal                                                                                         | Yesterday                               |
+| `oxygenSaturation`              | LC patients sometimes desaturate on exertion (silent hypoxia residual)                                                                                 | Last 24h                                |
 
 ## Tier 2 — Voice-only (the agent must ask)
 
@@ -36,30 +36,30 @@ These are subjective and HealthKit cannot capture them. The agent owns
 each of these via `record_symptom`, `record_activity`, or
 `record_session_context`.
 
-| Field | Why voice |
-|---|---|
-| Symptom severity (1–5) | Two people with identical HRV experience different severities. Only the patient can rate. |
-| PEM presence today | Requires the patient to link today's state to past exertion. No biomarker captures the causal feeling. |
-| Brain fog quality | "Words won't come" vs "can't focus" vs "blank screen" — texture matters; biometrics are blind here. |
-| Unrefreshing-sleep flag | Sleep duration is objective; the *feeling* of restoration is not. |
-| Pain location/quality | Headache vs muscle vs joint — taxonomic discrimination needs language. |
-| Sensitivity flares | Lights, sounds, smells, chemicals — episodic, not measurable. |
-| Mood | Self-rated affect. State of Mind in HealthKit exists but requires manual entry. |
-| Activity type | HealthKit knows steps; doesn't know "showered" vs "had a hard call" — both are exertion, very different recovery cost. |
+| Field                   | Why voice                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Symptom severity (1–5)  | Two people with identical HRV experience different severities. Only the patient can rate.                              |
+| PEM presence today      | Requires the patient to link today's state to past exertion. No biomarker captures the causal feeling.                 |
+| Brain fog quality       | "Words won't come" vs "can't focus" vs "blank screen" — texture matters; biometrics are blind here.                    |
+| Unrefreshing-sleep flag | Sleep duration is objective; the _feeling_ of restoration is not.                                                      |
+| Pain location/quality   | Headache vs muscle vs joint — taxonomic discrimination needs language.                                                 |
+| Sensitivity flares      | Lights, sounds, smells, chemicals — episodic, not measurable.                                                          |
+| Mood                    | Self-rated affect. State of Mind in HealthKit exists but requires manual entry.                                        |
+| Activity type           | HealthKit knows steps; doesn't know "showered" vs "had a hard call" — both are exertion, very different recovery cost. |
 
 ## Tier 3 — Hybrid (HealthKit primes the question)
 
 The agent uses HealthKit context to ask a sharper question — closing the
 loop between objective and subjective.
 
-| Trigger (HealthKit) | Agent prompt example |
-|---|---|
-| HRV down >15% vs 7-day baseline | "I noticed your HRV is lower than usual — anything feel off?" |
-| RHR up >5bpm vs baseline | "Your resting heart rate is a bit higher today — does the body feel revved up?" |
-| Wrist temp +0.3°C above baseline | "Looks like you ran a bit warm overnight — any flu feeling today?" |
-| Steps <500 yesterday | "It looks like a quiet day yesterday — was that rest, or did you not feel up to moving?" |
-| Sleep <5h | "Sleep was short — how's the head right now?" |
-| Walking HR avg >120bpm | "I see the heart was working hard on a short walk yesterday — any standing-up dizziness today?" |
+| Trigger (HealthKit)              | Agent prompt example                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| HRV down >15% vs 7-day baseline  | "I noticed your HRV is lower than usual — anything feel off?"                                   |
+| RHR up >5bpm vs baseline         | "Your resting heart rate is a bit higher today — does the body feel revved up?"                 |
+| Wrist temp +0.3°C above baseline | "Looks like you ran a bit warm overnight — any flu feeling today?"                              |
+| Steps <500 yesterday             | "It looks like a quiet day yesterday — was that rest, or did you not feel up to moving?"        |
+| Sleep <5h                        | "Sleep was short — how's the head right now?"                                                   |
+| Walking HR avg >120bpm           | "I see the heart was working hard on a short walk yesterday — any standing-up dizziness today?" |
 
 ## Implementation notes (deferred)
 

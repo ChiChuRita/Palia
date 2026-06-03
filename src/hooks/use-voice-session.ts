@@ -51,9 +51,7 @@ export function useVoiceSession() {
   // BEFORE the agent has greeted, and the model politely waits, producing a
   // 10–15 sec dead-air delay at the start.
   const micEnabledRef = useRef(false);
-  const micFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const micFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 200ms polling timer for the agent's audioLevel (LiveKit doesn't emit an
   // event for it; we sample). Smoothing handled below.
   const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,21 +136,15 @@ export function useVoiceSession() {
       // Agent participant joined and/or audio track subscribed:
       // agent is in the room but hasn't started talking yet. Show 'preparing'.
       room.on(RoomEvent.ParticipantConnected, () => {
-        setStatus((s) =>
-          s.state === "connecting" ? { ...s, state: "preparing" } : s,
-        );
+        setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
       });
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind !== Track.Kind.Audio) return;
-        setStatus((s) =>
-          s.state === "connecting" ? { ...s, state: "preparing" } : s,
-        );
+        setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
       });
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const r = roomRef.current;
-        const agentSpeaking = speakers.some(
-          (p) => p.identity !== deviceId && p.isSpeaking,
-        );
+        const agentSpeaking = speakers.some((p) => p.identity !== deviceId && p.isSpeaking);
         if (agentSpeaking) agentHasSpokenRef.current = true;
 
         // Enable the mic only after the agent's first turn has ENDED (i.e.
@@ -160,12 +152,7 @@ export function useVoiceSession() {
         // fix for the slow-start problem: with the mic off during the
         // greeting, the model doesn't get spurious user-speech events that
         // make it wait silently.
-        if (
-          agentHasSpokenRef.current &&
-          !agentSpeaking &&
-          !micEnabledRef.current &&
-          r
-        ) {
+        if (agentHasSpokenRef.current && !agentSpeaking && !micEnabledRef.current && r) {
           micEnabledRef.current = true;
           r.localParticipant.setMicrophoneEnabled(true).catch(() => {});
           if (micFallbackTimerRef.current) {

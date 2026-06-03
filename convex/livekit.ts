@@ -31,14 +31,13 @@ export const mintToken = action({
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     if (!url || !apiKey || !apiSecret) {
       throw new Error(
-        "LiveKit env vars missing: set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET via `npx convex env set`",
+        "LiveKit env vars missing: set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET via `npx convex env set`"
       );
     }
 
-    const sessionId: Id<"sessions"> = await ctx.runMutation(
-      api.sessions.start,
-      { deviceId: args.deviceId },
-    );
+    const sessionId: Id<"sessions"> = await ctx.runMutation(api.sessions.start, {
+      deviceId: args.deviceId,
+    });
 
     const at = new AccessToken(apiKey, apiSecret, {
       identity: args.deviceId,

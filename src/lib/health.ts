@@ -2,7 +2,7 @@ import {
   requestAuthorization,
   type CategoryTypeIdentifier,
   type ObjectTypeIdentifier,
-  type QuantityTypeIdentifier
+  type QuantityTypeIdentifier,
 } from "@kingstinct/react-native-healthkit";
 import { Platform } from "react-native";
 import {
@@ -75,13 +75,12 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
   if (!ok) return EMPTY;
 
   if (Platform.OS === "android") {
-    const [hrvMs, restingHrBpm, sleepHoursLastNight, stepsYesterday] =
-      await Promise.all([
-        readAndroidHrvLatest(),
-        readAndroidRestingHrLatest(),
-        readAndroidSleepLastNight(),
-        readAndroidStepsYesterday(),
-      ]);
+    const [hrvMs, restingHrBpm, sleepHoursLastNight, stepsYesterday] = await Promise.all([
+      readAndroidHrvLatest(),
+      readAndroidRestingHrLatest(),
+      readAndroidSleepLastNight(),
+      readAndroidStepsYesterday(),
+    ]);
     return {
       hrvMs,
       hrvBaselineMs: null,
@@ -92,19 +91,14 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
   }
 
   if (Platform.OS === "ios") {
-    const [
-      hrvMs,
-      hrvBaselineMs,
-      restingHrBpm,
-      sleepHoursLastNight,
-      stepsYesterday,
-    ] = await Promise.all([
-      readHrvLatest(),
-      readHrvBaseline7Day(),
-      readRestingHrLatest(),
-      readSleepHoursLastNight(),
-      readStepsYesterday(),
-    ]);
+    const [hrvMs, hrvBaselineMs, restingHrBpm, sleepHoursLastNight, stepsYesterday] =
+      await Promise.all([
+        readHrvLatest(),
+        readHrvBaseline7Day(),
+        readRestingHrLatest(),
+        readSleepHoursLastNight(),
+        readStepsYesterday(),
+      ]);
     return {
       hrvMs,
       hrvBaselineMs,
@@ -134,7 +128,7 @@ async function readAndroidHrvLatest(): Promise<number | null> {
       },
     });
     const latest = result.records.sort(
-      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
+      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
     )[0];
     return latest ? Math.round(latest.heartRateVariabilityMillis) : null;
   } catch {
@@ -154,7 +148,7 @@ async function readAndroidRestingHrLatest(): Promise<number | null> {
       },
     });
     const latest = result.records.sort(
-      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
+      (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
     )[0];
     return latest ? Math.round(latest.beatsPerMinute) : null;
   } catch {
@@ -182,9 +176,7 @@ async function readAndroidSleepLastNight(): Promise<number | null> {
     if (result.records.length === 0) return null;
     let totalMs = 0;
     for (const record of result.records) {
-      totalMs +=
-        new Date(record.endTime).getTime() -
-        new Date(record.startTime).getTime();
+      totalMs += new Date(record.endTime).getTime() - new Date(record.startTime).getTime();
     }
     const hours = totalMs / (1000 * 60 * 60);
     return hours > 0.25 ? Math.round(hours * 10) / 10 : null;
@@ -210,9 +202,7 @@ async function readAndroidStepsYesterday(): Promise<number | null> {
       },
     });
 
-    return (
-      result.records.reduce((sum, record) => sum + record.count, 0) || null
-    );
+    return result.records.reduce((sum, record) => sum + record.count, 0) || null;
   } catch {
     return null;
   }

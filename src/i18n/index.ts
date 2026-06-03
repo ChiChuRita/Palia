@@ -1,30 +1,30 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getLocales } from 'expo-localization';
-import { I18n } from 'i18n-js';
-import { useEffect, useState } from 'react';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getLocales } from "expo-localization";
+import { I18n } from "i18n-js";
+import { useEffect, useState } from "react";
 
-import { de } from './de';
-import { en } from './en';
+import { de } from "./de";
+import { en } from "./en";
 
-export type Locale = 'en' | 'de';
+export type Locale = "en" | "de";
 
-const LOCALE_KEY = 'mecfs:locale';
+const LOCALE_KEY = "mecfs:locale";
 
 export const i18n = new I18n(
   { en, de },
   {
     enableFallback: true,
-    defaultLocale: 'en',
-    locale: 'en',
-  },
+    defaultLocale: "en",
+    locale: "en",
+  }
 );
 
-let currentLocale: Locale = 'en';
+let currentLocale: Locale = "en";
 const listeners = new Set<(l: Locale) => void>();
 
 function detectInitial(): Locale {
   const phone = getLocales()[0]?.languageCode?.toLowerCase();
-  return phone === 'de' ? 'de' : 'en';
+  return phone === "de" ? "de" : "en";
 }
 
 function applyLocale(locale: Locale) {
@@ -66,8 +66,7 @@ export function useTranslation() {
 
   return {
     locale,
-    t: (key: string, options?: Record<string, unknown>) =>
-      i18n.t(key, options),
+    t: (key: string, options?: Record<string, unknown>) => i18n.t(key, options),
     setLocale,
   };
 }

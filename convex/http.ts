@@ -3,21 +3,14 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import {
-  ACTIVITY_CATEGORY_KEYS,
-  SYMPTOM_CATEGORY_KEYS,
-} from "./taxonomy";
+import { ACTIVITY_CATEGORY_KEYS, SYMPTOM_CATEGORY_KEYS } from "./taxonomy";
 
 const http = httpRouter();
 
 // Strict enums on the HTTP boundary — if the agent sends an unknown category,
 // reject it loudly so we don't silently store garbage.
-const symptomCategoryEnum = z.enum(
-  SYMPTOM_CATEGORY_KEYS as unknown as [string, ...string[]],
-);
-const activityCategoryEnum = z.enum(
-  ACTIVITY_CATEGORY_KEYS as unknown as [string, ...string[]],
-);
+const symptomCategoryEnum = z.enum(SYMPTOM_CATEGORY_KEYS as unknown as [string, ...string[]]);
+const activityCategoryEnum = z.enum(ACTIVITY_CATEGORY_KEYS as unknown as [string, ...string[]]);
 
 // Shape validation for incoming agent events. Discriminated union on `type`.
 const AgentEventSchema = z.discriminatedUnion("type", [
@@ -41,7 +34,11 @@ const AgentEventSchema = z.discriminatedUnion("type", [
     category: activityCategoryEnum,
     userWords: z.string().min(1),
     exertion: z.number().min(1).max(5).optional(),
-    durationMinutes: z.number().min(0).max(24 * 60).optional(),
+    durationMinutes: z
+      .number()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
   }),
   z.object({
     type: z.literal("session_context"),
@@ -65,7 +62,11 @@ const AgentEventSchema = z.discriminatedUnion("type", [
     category: activityCategoryEnum.optional(),
     userWords: z.string().min(1).optional(),
     exertion: z.number().min(1).max(5).optional(),
-    durationMinutes: z.number().min(0).max(24 * 60).optional(),
+    durationMinutes: z
+      .number()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
   }),
   z.object({
     type: z.literal("finalize"),
@@ -102,7 +103,7 @@ http.route({
     if (!parsed.success) {
       return new Response(
         JSON.stringify({ error: "validation failed", issues: parsed.error.issues }),
-        { status: 400, headers: { "content-type": "application/json" } },
+        { status: 400, headers: { "content-type": "application/json" } }
       );
     }
     const event = parsed.data;

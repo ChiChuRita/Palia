@@ -17,27 +17,27 @@
 
 export const SYMPTOM_CATEGORY_KEYS = [
   // IOM 2015 required cluster
-  'fatigue',
-  'pem',
-  'brain_fog',
-  'unrefreshing_sleep',
+  "fatigue",
+  "pem",
+  "brain_fog",
+  "unrefreshing_sleep",
   // Common cluster (lumped from CCC pain + autonomic + immune)
-  'pain',         // headache + muscle + joint
-  'orthostatic',  // POTS + OI + dizziness on standing
-  'flu_feeling',  // sore throat + lymph + flu-like — distinct immune flare
+  "pain", // headache + muscle + joint
+  "orthostatic", // POTS + OI + dizziness on standing
+  "flu_feeling", // sore throat + lymph + flu-like — distinct immune flare
   // Escape
-  'other',
+  "other",
 ] as const;
 export type SymptomCategory = (typeof SYMPTOM_CATEGORY_KEYS)[number];
 
 export const ACTIVITY_CATEGORY_KEYS = [
-  'rest',
-  'household',       // light + heavy chores lumped
-  'walking',         // short + long lumped
-  'cognitive_work',
-  'social',
-  'errand',          // errands + appointments lumped
-  'other',
+  "rest",
+  "household", // light + heavy chores lumped
+  "walking", // short + long lumped
+  "cognitive_work",
+  "social",
+  "errand", // errands + appointments lumped
+  "other",
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORY_KEYS)[number];
 

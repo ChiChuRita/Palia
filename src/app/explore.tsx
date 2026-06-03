@@ -1,72 +1,61 @@
-import { useQuery } from 'convex/react';
-import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeOut,
-  LinearTransition,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from "convex/react";
+import { useMemo, useState } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  EnergyScoreEditor,
-  SessionEditSheet,
-} from '@/components/session-edit-sheet';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useReduceMotion } from '@/hooks/use-reduce-motion';
-import { useTheme } from '@/hooks/use-theme';
-import { useTranslation } from '@/i18n';
-import { DAY_MS, startOfLocalDay } from '@/lib/dates';
-import { useDeviceId } from '@/lib/device-id';
+import { EnergyScoreEditor, SessionEditSheet } from "@/components/session-edit-sheet";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import { useReduceMotion } from "@/hooks/use-reduce-motion";
+import { useTheme } from "@/hooks/use-theme";
+import { useTranslation } from "@/i18n";
+import { DAY_MS, startOfLocalDay } from "@/lib/dates";
+import { useDeviceId } from "@/lib/device-id";
 
-import { api } from '@/../convex/_generated/api';
-import type { Doc, Id } from '@/../convex/_generated/dataModel';
+import { api } from "@/../convex/_generated/api";
+import type { Doc, Id } from "@/../convex/_generated/dataModel";
 
 const SCORE_COLORS: Record<number, string> = {
-  1: '#b85a5a',
-  2: '#d9974a',
-  3: '#c9b97a',
-  4: '#7ba374',
-  5: '#5a8a5e',
+  1: "#b85a5a",
+  2: "#d9974a",
+  3: "#c9b97a",
+  4: "#7ba374",
+  5: "#5a8a5e",
 };
 
-function formatDay(
-  ts: number,
-  t: (key: string) => string,
-  locale: string,
-) {
+function formatDay(ts: number, t: (key: string) => string, locale: string) {
   const today = startOfLocalDay(Date.now());
   const d = new Date(ts);
   d.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today) / DAY_MS);
-  if (diff === 0) return t('history.today');
-  if (diff === -1) return t('history.yesterday');
+  if (diff === 0) return t("history.today");
+  if (diff === -1) return t("history.yesterday");
   return new Date(ts).toLocaleDateString(locale, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
+    weekday: "short",
+    month: "short",
+    day: "numeric",
   });
 }
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
 // Resolve a category key (e.g. "brain_fog") to a localized label via i18n.
 // Falls back to a Title-Cased version of the key if the locale is missing it.
-function useCategoryLabel(kind: 'symptom' | 'activity') {
+function useCategoryLabel(kind: "symptom" | "activity") {
   const { t } = useTranslation();
   return (key: string) => {
-    const path = kind === 'symptom' ? 'symptomCategories' : 'activityCategories';
+    const path = kind === "symptom" ? "symptomCategories" : "activityCategories";
     const label = t(`${path}.${key}`);
     // i18n-js returns "[missing ...]" when the key isn't found.
-    if (!label || label.startsWith('[missing')) {
-      return key.replace(/_/g, ' ');
+    if (!label || label.startsWith("[missing")) {
+      return key.replace(/_/g, " ");
     }
     return label;
   };
@@ -81,19 +70,16 @@ export default function HistoryScreen() {
     ...safeAreaInsets,
     bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
   };
-  const symptomLabel = useCategoryLabel('symptom');
-  const activityLabel = useCategoryLabel('activity');
+  const symptomLabel = useCategoryLabel("symptom");
+  const activityLabel = useCategoryLabel("activity");
 
   const now = useMemo(() => Date.now(), []);
   const sevenDaysAgo = useMemo(() => startOfLocalDay(now) - 6 * DAY_MS, [now]);
 
-  const sessions = useQuery(
-    api.sessions.listForDevice,
-    deviceId ? { deviceId } : 'skip',
-  );
+  const sessions = useQuery(api.sessions.listForDevice, deviceId ? { deviceId } : "skip");
   const weekly = useQuery(
     api.sessions.weeklyAggregates,
-    deviceId ? { deviceId, sinceMs: sevenDaysAgo } : 'skip',
+    deviceId ? { deviceId, sinceMs: sevenDaysAgo } : "skip"
   );
 
   // Bucket sessions by local day for the weekly pattern strip.
@@ -101,7 +87,7 @@ export default function HistoryScreen() {
     const buckets = new Map<number, number>(); // dayStart -> best score that day
     if (sessions) {
       for (const s of sessions) {
-        if (s.status !== 'completed' || s.energyScore == null) continue;
+        if (s.status !== "completed" || s.energyScore == null) continue;
         const bucket = startOfLocalDay(s.startedAt);
         const prev = buckets.get(bucket);
         if (prev == null || s.energyScore > prev) {
@@ -116,17 +102,15 @@ export default function HistoryScreen() {
       cells.push({
         dayStart,
         score: buckets.get(dayStart) ?? null,
-        label: new Date(dayStart)
-          .toLocaleDateString(locale, { weekday: 'narrow' })
-          .charAt(0),
+        label: new Date(dayStart).toLocaleDateString(locale, { weekday: "narrow" }).charAt(0),
       });
     }
     return cells;
   }, [sessions, now, locale]);
 
   const completedSessions = useMemo(
-    () => (sessions ?? []).filter((s) => s.status === 'completed'),
-    [sessions],
+    () => (sessions ?? []).filter((s) => s.status === "completed"),
+    [sessions]
   );
 
   const contentPlatformStyle = Platform.select({
@@ -143,34 +127,35 @@ export default function HistoryScreen() {
     <ScrollView
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
+      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}
+    >
       <ThemedView style={styles.container}>
         <View style={styles.header}>
-          <ThemedText type="subtitle">{t('history.title')}</ThemedText>
+          <ThemedText type="subtitle">{t("history.title")}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            {t('history.subtitle')}
+            {t("history.subtitle")}
           </ThemedText>
         </View>
 
-        <Section title={t('history.thisWeek')}>
+        <Section title={t("history.thisWeek")}>
           <WeekPattern cells={weekPattern} />
           {weekly && (weekly.sleep.nights > 0 || weekly.pemDays > 0) ? (
             <View style={styles.weeklyMeta}>
               {weekly.sleep.avgHours != null ? (
                 <MetaPill
-                  label={t('history.sleep')}
-                  value={t('history.avgSleep', {
+                  label={t("history.sleep")}
+                  value={t("history.avgSleep", {
                     value: weekly.sleep.avgHours.toFixed(1),
                   })}
                 />
               ) : null}
               {weekly.pemDays > 0 ? (
                 <MetaPill
-                  label={t('history.pemDays')}
+                  label={t("history.pemDays")}
                   value={
                     weekly.pemDays === 1
-                      ? t('history.pemCountOne', { count: weekly.pemDays })
-                      : t('history.pemCountOther', { count: weekly.pemDays })
+                      ? t("history.pemCountOne", { count: weekly.pemDays })
+                      : t("history.pemCountOther", { count: weekly.pemDays })
                   }
                   emphasized
                 />
@@ -179,24 +164,24 @@ export default function HistoryScreen() {
           ) : null}
         </Section>
 
-        <Section title={t('history.commonSymptoms')}>
+        <Section title={t("history.commonSymptoms")}>
           {weekly === undefined ? (
             <Loading />
           ) : weekly.symptoms.length === 0 ? (
-            <Quiet text={t('history.nothingLogged')} />
+            <Quiet text={t("history.nothingLogged")} />
           ) : (
             <View style={styles.list}>
               {weekly.symptoms.map((s) => {
                 const dayLabel =
                   s.count === 1
-                    ? t('history.daysOne', { count: s.count })
-                    : t('history.daysOther', { count: s.count });
+                    ? t("history.daysOne", { count: s.count })
+                    : t("history.daysOther", { count: s.count });
                 const sevPart =
                   s.avgSeverity != null
-                    ? ` · ${t('history.avgSeverity', {
+                    ? ` · ${t("history.avgSeverity", {
                         value: s.avgSeverity.toFixed(1),
                       })}`
-                    : '';
+                    : "";
                 return (
                   <FactRow
                     key={s.category}
@@ -210,24 +195,24 @@ export default function HistoryScreen() {
           )}
         </Section>
 
-        <Section title={t('history.commonActivities')}>
+        <Section title={t("history.commonActivities")}>
           {weekly === undefined ? (
             <Loading />
           ) : weekly.activities.length === 0 ? (
-            <Quiet text={t('history.nothingLogged')} />
+            <Quiet text={t("history.nothingLogged")} />
           ) : (
             <View style={styles.list}>
               {weekly.activities.map((a) => {
                 const timesLabel =
                   a.count === 1
-                    ? t('history.timesOne', { count: a.count })
-                    : t('history.timesOther', { count: a.count });
+                    ? t("history.timesOne", { count: a.count })
+                    : t("history.timesOther", { count: a.count });
                 const exPart =
                   a.avgExertion != null
-                    ? ` · ${t('history.avgExertion', {
+                    ? ` · ${t("history.avgExertion", {
                         value: a.avgExertion.toFixed(1),
                       })}`
-                    : '';
+                    : "";
                 return (
                   <FactRow
                     key={a.category}
@@ -241,21 +226,15 @@ export default function HistoryScreen() {
           )}
         </Section>
 
-        <Section title={t('history.recentCheckIns')}>
+        <Section title={t("history.recentCheckIns")}>
           {sessions === undefined ? (
             <Loading />
           ) : completedSessions.length === 0 ? (
-            <Quiet text={t('history.noCheckIns')} />
+            <Quiet text={t("history.noCheckIns")} />
           ) : (
             <View style={styles.list}>
               {completedSessions.map((s) => (
-                <SessionRow
-                  key={s._id}
-                  session={s}
-                  deviceId={deviceId}
-                  t={t}
-                  locale={locale}
-                />
+                <SessionRow key={s._id} session={s} deviceId={deviceId} t={t} locale={locale} />
               ))}
             </View>
           )}
@@ -265,13 +244,7 @@ export default function HistoryScreen() {
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
       <ThemedText type="smallBold" style={styles.sectionTitle}>
@@ -315,11 +288,10 @@ function MetaPill({
       style={[
         styles.metaPill,
         {
-          backgroundColor: emphasized
-            ? theme.backgroundSelected
-            : theme.backgroundElement,
+          backgroundColor: emphasized ? theme.backgroundSelected : theme.backgroundElement,
         },
-      ]}>
+      ]}
+    >
       <ThemedText type="small" themeColor="textSecondary">
         {label.toUpperCase()}
       </ThemedText>
@@ -339,23 +311,15 @@ function WeekPattern({
     <View style={styles.weekRow}>
       {cells.map((cell, i) => {
         const filled = cell.score != null;
-        const color = filled
-          ? SCORE_COLORS[cell.score!]
-          : theme.backgroundElement;
+        const color = filled ? SCORE_COLORS[cell.score!] : theme.backgroundElement;
         const border = filled ? color : theme.backgroundSelected;
         return (
           <Animated.View
             key={cell.dayStart}
-            entering={
-              reduceMotion ? undefined : FadeIn.duration(280).delay(i * 50)
-            }
-            style={styles.weekCell}>
-            <View
-              style={[
-                styles.weekDot,
-                { backgroundColor: color, borderColor: border },
-              ]}
-            />
+            entering={reduceMotion ? undefined : FadeIn.duration(280).delay(i * 50)}
+            style={styles.weekCell}
+          >
+            <View style={[styles.weekDot, { backgroundColor: color, borderColor: border }]} />
             <ThemedText type="small" themeColor="textSecondary">
               {cell.label}
             </ThemedText>
@@ -396,7 +360,7 @@ function SessionRow({
   t,
   locale,
 }: {
-  session: Doc<'sessions'>;
+  session: Doc<"sessions">;
   deviceId: string | null;
   t: (key: string) => string;
   locale: string;
@@ -407,37 +371,33 @@ function SessionRow({
   // - {kind:'symptom', id} edits a specific symptom row
   // - {kind:'activity', id} edits a specific activity row
   const [editing, setEditing] = useState<
-    | { kind: 'energy' }
-    | { kind: 'symptom'; id: Id<'symptoms'> }
-    | { kind: 'activity'; id: Id<'activities'> }
+    | { kind: "energy" }
+    | { kind: "symptom"; id: Id<"symptoms"> }
+    | { kind: "activity"; id: Id<"activities"> }
     | null
   >(null);
-  const symptomLabel = useCategoryLabel('symptom');
-  const activityLabel = useCategoryLabel('activity');
+  const symptomLabel = useCategoryLabel("symptom");
+  const activityLabel = useCategoryLabel("activity");
 
   const transcript = useQuery(
     api.sessions.listTranscriptForSession,
-    expanded ? { sessionId: session._id } : 'skip',
+    expanded ? { sessionId: session._id } : "skip"
   );
   const sessionSymptoms = useQuery(
     api.sessions.listSymptomsForSession,
-    expanded ? { sessionId: session._id } : 'skip',
+    expanded ? { sessionId: session._id } : "skip"
   );
   const sessionActivities = useQuery(
     api.sessions.listActivitiesForSession,
-    expanded ? { sessionId: session._id } : 'skip',
+    expanded ? { sessionId: session._id } : "skip"
   );
 
   return (
     <Animated.View layout={LinearTransition.duration(260)}>
       <ThemedView type="backgroundElement" style={styles.sessionCard}>
-        <Pressable
-          onPress={() => setExpanded((v) => !v)}
-          style={styles.sessionHeader}>
+        <Pressable onPress={() => setExpanded((v) => !v)} style={styles.sessionHeader}>
           <View style={styles.sessionMeta}>
-            <ThemedText type="smallBold">
-              {formatDay(session.startedAt, t, locale)}
-            </ThemedText>
+            <ThemedText type="smallBold">{formatDay(session.startedAt, t, locale)}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               {formatTime(session.startedAt)}
             </ThemedText>
@@ -446,14 +406,15 @@ function SessionRow({
             onPress={(e) => {
               e.stopPropagation();
               if (!deviceId) return;
-              setEditing(editing?.kind === 'energy' ? null : { kind: 'energy' });
+              setEditing(editing?.kind === "energy" ? null : { kind: "energy" });
             }}
-            hitSlop={6}>
+            hitSlop={6}
+          >
             <SessionDots score={session.energyScore ?? null} />
           </Pressable>
         </Pressable>
 
-        {editing?.kind === 'energy' && deviceId ? (
+        {editing?.kind === "energy" && deviceId ? (
           <EnergyScoreEditor
             session={session}
             deviceId={deviceId}
@@ -472,7 +433,8 @@ function SessionRow({
             entering={FadeIn.duration(220)}
             exiting={FadeOut.duration(160)}
             layout={LinearTransition.duration(260)}
-            style={styles.transcript}>
+            style={styles.transcript}
+          >
             {/* Structured rows — symptom and activity, both editable */}
             {(sessionSymptoms?.length ?? 0) > 0 || (sessionActivities?.length ?? 0) > 0 ? (
               <View style={styles.structuredBlock}>
@@ -489,15 +451,13 @@ function SessionRow({
                       onPress={() => {
                         if (!deviceId) return;
                         setEditing(
-                          editing?.kind === 'symptom' && editing.id === s._id
+                          editing?.kind === "symptom" && editing.id === s._id
                             ? null
-                            : { kind: 'symptom', id: s._id },
+                            : { kind: "symptom", id: s._id }
                         );
                       }}
                     />
-                    {editing?.kind === 'symptom' &&
-                    editing.id === s._id &&
-                    deviceId ? (
+                    {editing?.kind === "symptom" && editing.id === s._id && deviceId ? (
                       <SessionEditSheet
                         kind="symptom"
                         row={s}
@@ -520,15 +480,13 @@ function SessionRow({
                       onPress={() => {
                         if (!deviceId) return;
                         setEditing(
-                          editing?.kind === 'activity' && editing.id === a._id
+                          editing?.kind === "activity" && editing.id === a._id
                             ? null
-                            : { kind: 'activity', id: a._id },
+                            : { kind: "activity", id: a._id }
                         );
                       }}
                     />
-                    {editing?.kind === 'activity' &&
-                    editing.id === a._id &&
-                    deviceId ? (
+                    {editing?.kind === "activity" && editing.id === a._id && deviceId ? (
                       <SessionEditSheet
                         kind="activity"
                         row={a}
@@ -546,18 +504,17 @@ function SessionRow({
               <Loading />
             ) : transcript.length === 0 ? (
               <ThemedText type="small" themeColor="textSecondary">
-                {t('history.noTranscript')}
+                {t("history.noTranscript")}
               </ThemedText>
             ) : (
               transcript.map((m) => (
                 <Animated.View
                   key={m._id}
                   entering={FadeIn.duration(220)}
-                  style={styles.transcriptRow}>
+                  style={styles.transcriptRow}
+                >
                   <ThemedText type="smallBold" style={styles.transcriptRole}>
-                    {m.role === 'assistant'
-                      ? t('history.agent')
-                      : t('history.you')}
+                    {m.role === "assistant" ? t("history.agent") : t("history.you")}
                   </ThemedText>
                   <ThemedText type="small" style={styles.transcriptText}>
                     {m.text}
@@ -594,7 +551,8 @@ function EditableRow({
           borderColor: theme.backgroundSelected,
           opacity: pressed ? 0.7 : 1,
         },
-      ]}>
+      ]}
+    >
       <View style={styles.editableRowInfo}>
         <ThemedText type="default">{label}</ThemedText>
         {detail ? (
@@ -643,12 +601,8 @@ function SessionDots({ score }: { score: number | null }) {
             style={[
               styles.sessionDot,
               {
-                backgroundColor: on
-                  ? SCORE_COLORS[score]
-                  : theme.backgroundElement,
-                borderColor: on
-                  ? SCORE_COLORS[score]
-                  : theme.backgroundSelected,
+                backgroundColor: on ? SCORE_COLORS[score] : theme.backgroundElement,
+                borderColor: on ? SCORE_COLORS[score] : theme.backgroundSelected,
               },
             ]}
           />
@@ -661,8 +615,8 @@ function SessionDots({ score }: { score: number | null }) {
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
   },
   container: {
     maxWidth: MaxContentWidth,
@@ -677,12 +631,12 @@ const styles = StyleSheet.create({
   list: { gap: Spacing.two },
   quiet: { padding: Spacing.three, borderRadius: Spacing.two },
   weekRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.two,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   weekCell: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: Spacing.one,
     flex: 1,
   },
@@ -693,7 +647,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   weeklyMeta: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.two,
     marginTop: Spacing.two,
   },
@@ -709,20 +663,20 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     gap: Spacing.half,
   },
-  quote: { fontStyle: 'italic' },
+  quote: { fontStyle: "italic" },
   sessionCard: {
     padding: Spacing.three,
     borderRadius: Spacing.two,
     gap: Spacing.two,
   },
   sessionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sessionMeta: { gap: Spacing.half },
-  sessionSummary: { fontStyle: 'italic' },
-  sessionDotsRow: { flexDirection: 'row', gap: 4 },
+  sessionSummary: { fontStyle: "italic" },
+  sessionDotsRow: { flexDirection: "row", gap: 4 },
   sessionDot: {
     width: 10,
     height: 10,
@@ -733,23 +687,23 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
     gap: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#80808040',
+    borderTopColor: "#80808040",
   },
   transcriptRow: { gap: Spacing.half },
-  transcriptRole: { textTransform: 'uppercase', letterSpacing: 1 },
+  transcriptRole: { textTransform: "uppercase", letterSpacing: 1 },
   transcriptText: { lineHeight: 20 },
   structuredBlock: { gap: Spacing.two, paddingBottom: Spacing.two },
   editableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: Spacing.three,
     borderRadius: Spacing.two,
     borderWidth: StyleSheet.hairlineWidth,
     gap: Spacing.two,
   },
   editableRowInfo: { flex: 1, gap: Spacing.half },
-  editableScoreDots: { flexDirection: 'row', gap: 4 },
+  editableScoreDots: { flexDirection: "row", gap: 4 },
   editableScoreDot: {
     width: 8,
     height: 8,

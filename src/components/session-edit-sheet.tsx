@@ -2,29 +2,29 @@
 // Severity (or exertion) + delete. No category picker — if the category
 // is wrong, delete and let the next check-in capture it correctly.
 
-import { useMutation } from 'convex/react';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useMutation } from "convex/react";
+import { useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
-import { useTranslation } from '@/i18n';
+import { ThemedText } from "@/components/themed-text";
+import { Spacing } from "@/constants/theme";
+import { useTheme } from "@/hooks/use-theme";
+import { useTranslation } from "@/i18n";
 
-import { api } from '@/../convex/_generated/api';
-import type { Doc, Id } from '@/../convex/_generated/dataModel';
+import { api } from "@/../convex/_generated/api";
+import type { Doc, Id } from "@/../convex/_generated/dataModel";
 
 type Props =
   | {
-      kind: 'symptom';
-      row: Doc<'symptoms'>;
+      kind: "symptom";
+      row: Doc<"symptoms">;
       deviceId: string;
       onClose: () => void;
     }
   | {
-      kind: 'activity';
-      row: Doc<'activities'>;
+      kind: "activity";
+      row: Doc<"activities">;
       deviceId: string;
       onClose: () => void;
     };
@@ -37,28 +37,26 @@ export function SessionEditSheet(props: Props) {
   const editActivity = useMutation(api.sessions.editActivity);
   const deleteActivity = useMutation(api.sessions.deleteActivity);
 
-  const initialScore =
-    props.kind === 'symptom' ? props.row.severity : props.row.exertion;
+  const initialScore = props.kind === "symptom" ? props.row.severity : props.row.exertion;
   const [score, setScore] = useState<number | null>(initialScore ?? null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const scoreLabel =
-    props.kind === 'symptom' ? t('common.severity') : t('common.exertion');
+  const scoreLabel = props.kind === "symptom" ? t("common.severity") : t("common.exertion");
 
   const onSave = async () => {
     if (score === initialScore) {
       props.onClose();
       return;
     }
-    if (props.kind === 'symptom') {
+    if (props.kind === "symptom") {
       await editSymptom({
-        symptomId: props.row._id as Id<'symptoms'>,
+        symptomId: props.row._id as Id<"symptoms">,
         deviceId: props.deviceId,
         severity: score ?? undefined,
       });
     } else {
       await editActivity({
-        activityId: props.row._id as Id<'activities'>,
+        activityId: props.row._id as Id<"activities">,
         deviceId: props.deviceId,
         exertion: score ?? undefined,
       });
@@ -67,14 +65,14 @@ export function SessionEditSheet(props: Props) {
   };
 
   const onDelete = async () => {
-    if (props.kind === 'symptom') {
+    if (props.kind === "symptom") {
       await deleteSymptom({
-        symptomId: props.row._id as Id<'symptoms'>,
+        symptomId: props.row._id as Id<"symptoms">,
         deviceId: props.deviceId,
       });
     } else {
       await deleteActivity({
-        activityId: props.row._id as Id<'activities'>,
+        activityId: props.row._id as Id<"activities">,
         deviceId: props.deviceId,
       });
     }
@@ -88,7 +86,8 @@ export function SessionEditSheet(props: Props) {
       style={[
         styles.sheet,
         { backgroundColor: theme.background, borderColor: theme.backgroundSelected },
-      ]}>
+      ]}
+    >
       <View style={styles.field}>
         <ThemedText type="smallBold" themeColor="textSecondary" style={styles.label}>
           {scoreLabel.toUpperCase()}
@@ -118,16 +117,17 @@ export function SessionEditSheet(props: Props) {
         {confirmingDelete ? (
           <>
             <ThemedText type="small" themeColor="textSecondary" style={styles.confirmText}>
-              {t('common.deleteConfirm')}
+              {t("common.deleteConfirm")}
             </ThemedText>
             <Pressable
               onPress={() => setConfirmingDelete(false)}
-              style={[styles.action, { backgroundColor: theme.backgroundElement }]}>
-              <ThemedText type="small">{t('common.cancel')}</ThemedText>
+              style={[styles.action, { backgroundColor: theme.backgroundElement }]}
+            >
+              <ThemedText type="small">{t("common.cancel")}</ThemedText>
             </Pressable>
             <Pressable onPress={onDelete} style={[styles.action, styles.dangerAction]}>
               <ThemedText type="small" style={styles.dangerText}>
-                {t('common.delete')}
+                {t("common.delete")}
               </ThemedText>
             </Pressable>
           </>
@@ -135,18 +135,21 @@ export function SessionEditSheet(props: Props) {
           <>
             <Pressable
               onPress={() => setConfirmingDelete(true)}
-              style={[styles.action, { backgroundColor: theme.backgroundElement }]}>
-              <ThemedText type="small">{t('common.delete')}</ThemedText>
+              style={[styles.action, { backgroundColor: theme.backgroundElement }]}
+            >
+              <ThemedText type="small">{t("common.delete")}</ThemedText>
             </Pressable>
             <Pressable
               onPress={props.onClose}
-              style={[styles.action, { backgroundColor: theme.backgroundElement }]}>
-              <ThemedText type="small">{t('common.cancel')}</ThemedText>
+              style={[styles.action, { backgroundColor: theme.backgroundElement }]}
+            >
+              <ThemedText type="small">{t("common.cancel")}</ThemedText>
             </Pressable>
             <Pressable
               onPress={onSave}
-              style={[styles.action, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="small">{t('common.save')}</ThemedText>
+              style={[styles.action, { backgroundColor: theme.backgroundSelected }]}
+            >
+              <ThemedText type="small">{t("common.save")}</ThemedText>
             </Pressable>
           </>
         )}
@@ -161,7 +164,7 @@ export function EnergyScoreEditor({
   deviceId,
   onClose,
 }: {
-  session: Doc<'sessions'>;
+  session: Doc<"sessions">;
   deviceId: string;
   onClose: () => void;
 }) {
@@ -172,7 +175,7 @@ export function EnergyScoreEditor({
 
   const save = async () => {
     await editScore({
-      sessionId: session._id as Id<'sessions'>,
+      sessionId: session._id as Id<"sessions">,
       deviceId,
       energyScore: score,
     });
@@ -186,10 +189,11 @@ export function EnergyScoreEditor({
       style={[
         styles.sheet,
         { backgroundColor: theme.background, borderColor: theme.backgroundSelected },
-      ]}>
+      ]}
+    >
       <View style={styles.field}>
         <ThemedText type="smallBold" themeColor="textSecondary" style={styles.label}>
-          {t('common.energy').toUpperCase()}
+          {t("common.energy").toUpperCase()}
         </ThemedText>
         <View style={styles.scoreRow}>
           {[1, 2, 3, 4, 5].map((n) => {
@@ -214,13 +218,15 @@ export function EnergyScoreEditor({
       <View style={styles.actions}>
         <Pressable
           onPress={onClose}
-          style={[styles.action, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText type="small">{t('common.cancel')}</ThemedText>
+          style={[styles.action, { backgroundColor: theme.backgroundElement }]}
+        >
+          <ThemedText type="small">{t("common.cancel")}</ThemedText>
         </Pressable>
         <Pressable
           onPress={save}
-          style={[styles.action, { backgroundColor: theme.backgroundSelected }]}>
-          <ThemedText type="small">{t('common.save')}</ThemedText>
+          style={[styles.action, { backgroundColor: theme.backgroundSelected }]}
+        >
+          <ThemedText type="small">{t("common.save")}</ThemedText>
         </Pressable>
       </View>
     </Animated.View>
@@ -238,9 +244,9 @@ const styles = StyleSheet.create({
   field: { gap: Spacing.two },
   label: { letterSpacing: 1.2 },
   scoreRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.two,
-    alignItems: 'center',
+    alignItems: "center",
   },
   scoreDot: {
     width: 28,
@@ -249,17 +255,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.two,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   action: {
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.two,
   },
-  dangerAction: { backgroundColor: '#b85a5a' },
-  dangerText: { color: 'white' },
+  dangerAction: { backgroundColor: "#b85a5a" },
+  dangerText: { color: "white" },
   confirmText: { flex: 1 },
 });

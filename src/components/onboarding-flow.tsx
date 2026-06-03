@@ -75,11 +75,7 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               <ThemedText type="title" style={styles.title}>
                 {t("onboarding.welcomeTitle")}
               </ThemedText>
-              <ThemedText
-                type="default"
-                themeColor="textSecondary"
-                style={styles.body_text}
-              >
+              <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
                 {t("onboarding.welcomeBody")}
               </ThemedText>
             </Screen>
@@ -90,22 +86,12 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               <ThemedText type="title" style={styles.title}>
                 {t("onboarding.chooseLanguage")}
               </ThemedText>
-              <ThemedText
-                type="default"
-                themeColor="textSecondary"
-                style={styles.body_text}
-              >
+              <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
                 {t("onboarding.chooseLanguageBody")}
               </ThemedText>
               <View style={styles.choices}>
-                <LangChoice
-                  locale="de"
-                  label={t("onboarding.languageGerman")}
-                />
-                <LangChoice
-                  locale="en"
-                  label={t("onboarding.languageEnglish")}
-                />
+                <LangChoice locale="de" label={t("onboarding.languageGerman")} />
+                <LangChoice locale="en" label={t("onboarding.languageEnglish")} />
               </View>
             </Screen>
           ) : null}
@@ -115,11 +101,7 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               <ThemedText type="title" style={styles.title}>
                 {t("onboarding.micTitle")}
               </ThemedText>
-              <ThemedText
-                type="default"
-                themeColor="textSecondary"
-                style={styles.body_text}
-              >
+              <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
                 {t("onboarding.micBody")}
               </ThemedText>
             </Screen>
@@ -130,16 +112,10 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               <ThemedText type="title" style={styles.title}>
                 {Platform.select({
                   ios: t("onboarding.healthTitle"), // "Apple Health Integration"
-                  android:
-                    t("onboarding.healthConnectTitle") ||
-                    "Google Health Connect",
+                  android: t("onboarding.healthConnectTitle") || "Google Health Connect",
                 })}
               </ThemedText>
-              <ThemedText
-                type="default"
-                themeColor="textSecondary"
-                style={styles.body_text}
-              >
+              <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
                 {Platform.select({
                   ios: t("onboarding.healthBody"),
                   android:
@@ -159,11 +135,7 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               theme={theme}
             />
           ) : step === "language" ? (
-            <PrimaryButton
-              label={t("common.continue")}
-              onPress={() => next("mic")}
-              theme={theme}
-            />
+            <PrimaryButton label={t("common.continue")} onPress={() => next("mic")} theme={theme} />
           ) : step === "mic" ? (
             <View style={styles.row}>
               <SecondaryButton
@@ -172,9 +144,7 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
                 theme={theme}
               />
               <PrimaryButton
-                label={
-                  requestingMic ? t("common.loading") : t("onboarding.micGrant")
-                }
+                label={requestingMic ? t("common.loading") : t("onboarding.micGrant")}
                 onPress={onAllowMic}
                 theme={theme}
                 disabled={requestingMic}
@@ -182,17 +152,9 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
             </View>
           ) : step === "health" ? (
             <View style={styles.row}>
-              <SecondaryButton
-                label={t("onboarding.healthSkip")}
-                onPress={onDone}
-                theme={theme}
-              />
+              <SecondaryButton label={t("onboarding.healthSkip")} onPress={onDone} theme={theme} />
               <PrimaryButton
-                label={
-                  requestingHealth
-                    ? t("common.loading")
-                    : t("onboarding.healthGrant")
-                }
+                label={requestingHealth ? t("common.loading") : t("onboarding.healthGrant")}
                 onPress={onAllowHealth}
                 theme={theme}
                 disabled={requestingHealth}
@@ -205,13 +167,7 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Screen({
-  children,
-  reduceMotion,
-}: {
-  children: React.ReactNode;
-  reduceMotion: boolean;
-}) {
+function Screen({ children, reduceMotion }: { children: React.ReactNode; reduceMotion: boolean }) {
   return (
     <Animated.View
       entering={reduceMotion ? undefined : FadeIn.duration(360)}
@@ -233,9 +189,7 @@ function LangChoice({ locale, label }: { locale: Locale; label: string }) {
       style={({ pressed }) => [
         styles.langChoice,
         {
-          backgroundColor: selected
-            ? theme.backgroundSelected
-            : theme.backgroundElement,
+          backgroundColor: selected ? theme.backgroundSelected : theme.backgroundElement,
           borderColor: selected ? theme.text : "transparent",
           opacity: pressed ? 0.85 : 1,
         },
@@ -272,10 +226,7 @@ function PrimaryButton({
         },
       ]}
     >
-      <ThemedText
-        type="default"
-        style={{ color: theme.background, fontWeight: 600 }}
-      >
+      <ThemedText type="default" style={{ color: theme.background, fontWeight: 600 }}>
         {label}
       </ThemedText>
     </Pressable>

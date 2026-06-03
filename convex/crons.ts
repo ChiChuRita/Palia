@@ -9,7 +9,7 @@ crons.interval(
   "reap orphan active sessions",
   { minutes: 5 },
   internal.sessions.reapStaleActive,
-  {},
+  {}
 );
 
 export default crons;

@@ -17,11 +17,7 @@ if (Platform.OS !== "web") {
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [localeReady, setLocaleReady] = useState(false);
-  const {
-    onboarded,
-    setOnboarded,
-    ready: onboardingReady,
-  } = useOnboardingState();
+  const { onboarded, setOnboarded, ready: onboardingReady } = useOnboardingState();
 
   useEffect(() => {
     initLocale().then(() => setLocaleReady(true));

@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useState } from 'react';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useState } from "react";
 
-const KEY = 'mecfs:onboarded';
+const KEY = "mecfs:onboarded";
 
 // Tiny pub/sub so other parts of the app (Settings → reset onboarding) can
 // notify the gating hook in _layout.tsx to re-read AsyncStorage and re-render.
@@ -12,11 +12,11 @@ function notify(v: boolean) {
 }
 
 export async function hasOnboarded(): Promise<boolean> {
-  return (await AsyncStorage.getItem(KEY)) === '1';
+  return (await AsyncStorage.getItem(KEY)) === "1";
 }
 
 export async function markOnboarded(): Promise<void> {
-  await AsyncStorage.setItem(KEY, '1');
+  await AsyncStorage.setItem(KEY, "1");
   notify(true);
 }
 

@@ -1,30 +1,40 @@
-import { AudioSession } from '@livekit/react-native';
-import { useAction, useMutation } from 'convex/react';
-import { Room, RoomEvent, Track } from 'livekit-client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAction, useMutation } from "convex/react";
+import { Room, RoomEvent, Track } from "livekit-client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 
-import { api } from '@/../convex/_generated/api';
-import type { Id } from '@/../convex/_generated/dataModel';
-import { getLocale } from '@/i18n';
-import { getOrCreateDeviceId } from '@/lib/device-id';
-import { readHealthSnapshot } from '@/lib/health';
+const AudioSession =
+  Platform.OS === "web"
+    ? {
+        stopAudioSession: async () => {},
+        startAudioSession: async () => {},
+        configureAudio: async () => {},
+        setAppleAudioConfiguration: async () => {},
+      }
+    : require("@livekit/react-native").AudioSession;
+
+import { api } from "@/../convex/_generated/api";
+import type { Id } from "@/../convex/_generated/dataModel";
+import { getLocale } from "@/i18n";
+import { getOrCreateDeviceId } from "@/lib/device-id";
+import { readHealthSnapshot } from "@/lib/health";
 
 export type VoiceState =
-  | 'idle'
-  | 'connecting'
-  | 'preparing' // agent is in the room but hasn't started speaking yet
-  | 'listening'
-  | 'speaking'
-  | 'ending'
-  | 'error';
+  | "idle"
+  | "connecting"
+  | "preparing" // agent is in the room but hasn't started speaking yet
+  | "listening"
+  | "speaking"
+  | "ending"
+  | "error";
 
 type Status = {
   state: VoiceState;
   error: string | null;
-  sessionId: Id<'sessions'> | null;
+  sessionId: Id<"sessions"> | null;
 };
 
-const INITIAL: Status = { state: 'idle', error: null, sessionId: null };
+const INITIAL: Status = { state: "idle", error: null, sessionId: null };
 
 export function useVoiceSession() {
   const [status, setStatus] = useState<Status>(INITIAL);
@@ -32,7 +42,7 @@ export function useVoiceSession() {
   // gently pulse during 'speaking'. We expose it via the returned object.
   const [agentLevel, setAgentLevel] = useState(0);
   const roomRef = useRef<Room | null>(null);
-  const sessionIdRef = useRef<Id<'sessions'> | null>(null);
+  const sessionIdRef = useRef<Id<"sessions"> | null>(null);
   // Track whether the agent has actually started talking. Until then, the UI
   // should stay in 'preparing' instead of falsely claiming to listen.
   const agentHasSpokenRef = useRef(false);
@@ -76,7 +86,7 @@ export function useVoiceSession() {
   useEffect(() => cleanup, [cleanup]);
 
   const end = useCallback(async () => {
-    setStatus((s) => ({ ...s, state: 'ending' }));
+    setStatus((s) => ({ ...s, state: "ending" }));
     const sid = sessionIdRef.current;
     cleanup();
     if (sid) {
@@ -91,7 +101,7 @@ export function useVoiceSession() {
   const start = useCallback(async () => {
     agentHasSpokenRef.current = false;
     micEnabledRef.current = false;
-    setStatus({ state: 'connecting', error: null, sessionId: null });
+    setStatus({ state: "connecting", error: null, sessionId: null });
     try {
       const deviceId = await getOrCreateDeviceId();
       // Read HealthKit snapshot before minting the token so it rides along
@@ -110,13 +120,13 @@ export function useVoiceSession() {
       // automatic gain control. Without this, the agent hears its own
       // voice via the speaker and interrupts itself mid-sentence.
       await AudioSession.configureAudio({
-        ios: { defaultOutput: 'speaker' },
+        ios: { defaultOutput: "speaker" },
       });
       await AudioSession.startAudioSession();
       await AudioSession.setAppleAudioConfiguration({
-        audioCategory: 'playAndRecord',
-        audioCategoryOptions: ['allowBluetooth', 'defaultToSpeaker'],
-        audioMode: 'voiceChat',
+        audioCategory: "playAndRecord",
+        audioCategoryOptions: ["allowBluetooth", "defaultToSpeaker"],
+        audioMode: "voiceChat",
       });
 
       const room = new Room({
@@ -129,13 +139,13 @@ export function useVoiceSession() {
       // agent is in the room but hasn't started talking yet. Show 'preparing'.
       room.on(RoomEvent.ParticipantConnected, () => {
         setStatus((s) =>
-          s.state === 'connecting' ? { ...s, state: 'preparing' } : s,
+          s.state === "connecting" ? { ...s, state: "preparing" } : s,
         );
       });
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind !== Track.Kind.Audio) return;
         setStatus((s) =>
-          s.state === 'connecting' ? { ...s, state: 'preparing' } : s,
+          s.state === "connecting" ? { ...s, state: "preparing" } : s,
         );
       });
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -165,11 +175,11 @@ export function useVoiceSession() {
         }
 
         setStatus((s) => {
-          if (s.state === 'ending' || s.state === 'error') return s;
+          if (s.state === "ending" || s.state === "error") return s;
           if (!agentHasSpokenRef.current && !agentSpeaking) {
-            return { ...s, state: 'preparing' };
+            return { ...s, state: "preparing" };
           }
-          return { ...s, state: agentSpeaking ? 'speaking' : 'listening' };
+          return { ...s, state: agentSpeaking ? "speaking" : "listening" };
         });
       });
       // The agent ends the conversation by calling end_session, which
@@ -223,19 +233,18 @@ export function useVoiceSession() {
           if (p.audioLevel > max) max = p.audioLevel;
         });
         // Exponential moving average for smoothness (~150ms time constant).
-        smoothedLevelRef.current =
-          smoothedLevelRef.current * 0.7 + max * 0.3;
+        smoothedLevelRef.current = smoothedLevelRef.current * 0.7 + max * 0.3;
         setAgentLevel(smoothedLevelRef.current);
       }, 80);
 
       // Stay in 'preparing' until ActiveSpeakersChanged flips us to 'speaking'.
-      setStatus({ state: 'preparing', error: null, sessionId });
+      setStatus({ state: "preparing", error: null, sessionId });
     } catch (err) {
       cleanup();
       sessionIdRef.current = null;
       setStatus({
-        state: 'error',
-        error: err instanceof Error ? err.message : 'failed to start',
+        state: "error",
+        error: err instanceof Error ? err.message : "failed to start",
         sessionId: null,
       });
     }

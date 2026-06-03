@@ -12,10 +12,7 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Used for the voice check-in.",
         "NSHealthShareUsageDescription": "Used to gently reference your sleep, HRV, resting heart rate and activity during the check-in. We only read — we never write.",
-        "UIBackgroundModes": [
-          "audio",
-          "voip"
-        ]
+        "UIBackgroundModes": ["audio", "voip"]
       },
       "bitcode": false,
       "bundleIdentifier": "com.chichurita.mecfs"
@@ -36,7 +33,11 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WAKE_LOCK",
-        "android.permission.BLUETOOTH"
+        "android.permission.BLUETOOTH",
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_RESTING_HEART_RATE",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.READ_HEART_RATE_VARIABILITY"
       ]
     },
     "web": {

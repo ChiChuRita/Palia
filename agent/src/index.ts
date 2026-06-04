@@ -266,10 +266,39 @@ export default defineAgent({
       console.error("[mecfs-agent] session error", ev);
     });
 
-    await session.start({ agent, room: ctx.room });
-    session.generateReply({
-      instructions: kickInstructionForLocale(locale),
+    // Track whether the agent has actually started speaking. OpenAI's Realtime
+    // API intermittently returns "server is overloaded or not ready yet" during
+    // the very first generation. When that happens the plugin auto-reconnects,
+    // but the dropped reply is never re-issued — so the agent goes silent and
+    // the app hangs forever on "getting ready". We watch the agent state and
+    // re-trigger the greeting until it genuinely reaches the "speaking" state.
+    let agentSpoke = false;
+    session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
+      if (ev.newState === "speaking") agentSpoke = true;
     });
+
+    await session.start({ agent, room: ctx.room });
+
+    const GREETING_ATTEMPTS = 4;
+    const GREETING_WAIT_MS = 4000;
+    const GREETING_POLL_MS = 200;
+    for (let attempt = 1; attempt <= GREETING_ATTEMPTS && !agentSpoke; attempt++) {
+      if (attempt > 1) {
+        console.warn(
+          `[mecfs-agent] greeting attempt ${attempt}/${GREETING_ATTEMPTS} — no audio yet, retrying`
+        );
+      }
+      session.generateReply({ instructions: kickInstructionForLocale(locale) });
+      const deadline = Date.now() + GREETING_WAIT_MS;
+      while (!agentSpoke && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, GREETING_POLL_MS));
+      }
+    }
+    if (!agentSpoke) {
+      console.error(
+        "[mecfs-agent] agent never produced greeting audio after retries — OpenAI Realtime likely degraded"
+      );
+    }
   },
 });
 

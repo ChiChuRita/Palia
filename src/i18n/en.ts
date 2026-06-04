@@ -15,6 +15,7 @@ export const en = {
     exertion: "Exertion",
     energy: "Energy",
     deleteConfirm: "Remove this?",
+    home: "Home",
     explore: "Explore",
   },
   voice: {

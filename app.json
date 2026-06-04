@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "mecfs",
-    "slug": "mecfs",
+    "name": "Palia",
+    "slug": "palia",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mecfs",
+    "scheme": "palia",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
@@ -15,9 +15,10 @@
         "UIBackgroundModes": ["audio", "voip"]
       },
       "bitcode": false,
-      "bundleIdentifier": "com.chichurita.mecfs"
+      "bundleIdentifier": "com.chichurita.palia"
     },
     "android": {
+      "minSdkVersion": 33,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,7 +39,8 @@
         "android.permission.health.READ_RESTING_HEART_RATE",
         "android.permission.health.READ_SLEEP",
         "android.permission.health.READ_HEART_RATE_VARIABILITY"
-      ]
+      ],
+      "package": "com.chichurita.palia"
     },
     "web": {
       "output": "static",
@@ -52,9 +54,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#000000",
           "android": {
-            "image": "./assets/images/splash-icon.png",
+            "image": "./assets/images/logo-256.png",
             "imageWidth": 76
           }
         }
@@ -65,6 +67,14 @@
         {
           "NSHealthShareUsageDescription": "Used to gently reference your sleep, HRV, resting heart rate and activity during the check-in. We only read — we never write.",
           "background": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 33
+          }
         }
       ]
     ],

@@ -112,14 +112,14 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               <ThemedText type="title" style={styles.title}>
                 {Platform.select({
                   ios: t("onboarding.healthTitle"), // "Apple Health Integration"
-                  android: t("onboarding.healthConnectTitle") || "Google Health Connect",
+                  android: t("onboarding.healthTitle") || "Google Health Connect",
                 })}
               </ThemedText>
               <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
                 {Platform.select({
                   ios: t("onboarding.healthBody"),
                   android:
-                    t("onboarding.healthConnectBody") ||
+                    t("onboarding.healthBody") ||
                     "Used to gently reference your sleep, HRV, resting heart rate and activity. We only read — we never write. Skipping is fine if you don't use a smartwatch.",
                 })}
               </ThemedText>

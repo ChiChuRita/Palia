@@ -17,6 +17,7 @@ export const de: Translations = {
     exertion: "Anstrengung",
     energy: "Energie",
     deleteConfirm: "Wirklich entfernen?",
+    home: "Heute",
     explore: "Entdecken",
   },
   voice: {
@@ -91,7 +92,7 @@ export const de: Translations = {
     language: "Sprache",
     languageBody: "Wird für die App und für deine Check-in-Gespräche verwendet.",
     danger: "Zurücksetzen",
-    resetOnboarding: "Onboarding erneut anzeigen",
+    resetOnboarding: "Einführung erneut anzeigen",
     resetOnboardingBody: "Beim nächsten Start wird der Willkommens-Flow nochmal gezeigt.",
   },
   onboarding: {

@@ -73,7 +73,7 @@ export default function HistoryScreen() {
   const symptomLabel = useCategoryLabel("symptom");
   const activityLabel = useCategoryLabel("activity");
 
-  const now = useMemo(() => Date.now(), []);
+  const [now] = useState(() => Date.now());
   const sevenDaysAgo = useMemo(() => startOfLocalDay(now) - 6 * DAY_MS, [now]);
 
   const sessions = useQuery(api.sessions.listForDevice, deviceId ? { deviceId } : "skip");

@@ -17,6 +17,7 @@ export const de: Translations = {
     exertion: "Anstrengung",
     energy: "Energie",
     deleteConfirm: "Wirklich entfernen?",
+    explore: "Entdecken",
   },
   voice: {
     idle: "Tippen, um den Check-in zu starten",

@@ -5,7 +5,6 @@ import Animated, {
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -75,7 +74,7 @@ export function VoiceCheckIn() {
       duration: 120,
       easing: Easing.out(Easing.cubic),
     });
-  }, [agentLevel, state, reduceMotion]);
+  }, [agentLevel, state, reduceMotion, reactive]);
 
   useEffect(() => {
     if (reduceMotion || state !== "idle") {

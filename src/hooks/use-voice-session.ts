@@ -1,23 +1,27 @@
-import { useAction, useMutation } from "convex/react";
-import { Room, RoomEvent, Track } from "livekit-client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
-
-const AudioSession =
-  Platform.OS === "web"
-    ? {
-        stopAudioSession: async () => {},
-        startAudioSession: async () => {},
-        configureAudio: async () => {},
-        setAppleAudioConfiguration: async () => {},
-      }
-    : require("@livekit/react-native").AudioSession;
-
 import { api } from "@/../convex/_generated/api";
 import type { Id } from "@/../convex/_generated/dataModel";
 import { getLocale } from "@/i18n";
 import { getOrCreateDeviceId } from "@/lib/device-id";
 import { readHealthSnapshot } from "@/lib/health";
+import { useAction, useMutation } from "convex/react";
+import { Room, RoomEvent, Track } from "livekit-client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
+
+const FALLBACK_AUDIO_SESSION = {
+  stopAudioSession: async () => {},
+  startAudioSession: async () => {},
+  configureAudio: async () => {},
+  setAppleAudioConfiguration: async () => {},
+};
+
+let AudioSession: any = FALLBACK_AUDIO_SESSION;
+
+if (Platform.OS !== "web") {
+  import("@livekit/react-native").then((module) => {
+    AudioSession = module.AudioSession;
+  });
+}
 
 export type VoiceState =
   | "idle"
@@ -235,7 +239,7 @@ export function useVoiceSession() {
         sessionId: null,
       });
     }
-  }, [cleanup, mintToken]);
+  }, [cleanup, mintToken, markAbandoned]);
 
   return { ...status, start, end, agentLevel };
 }

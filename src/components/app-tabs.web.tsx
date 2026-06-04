@@ -14,8 +14,10 @@ import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
 
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
+import { useTranslation } from "@/i18n";
 
 export default function AppTabs() {
+  const { t } = useTranslation();
   return (
     <Tabs>
       <TabSlot style={{ height: "100%" }} />
@@ -25,7 +27,7 @@ export default function AppTabs() {
             <TabButton>Home</TabButton>
           </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
+            <TabButton>{t("common.explore")}</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>

@@ -29,7 +29,7 @@ async function requestMicPermission(): Promise<boolean> {
 
   try {
     // Lazy-require the native module ONLY when on iOS/Android
-    const { mediaDevices } = require("@livekit/react-native-webrtc");
+    const { mediaDevices } = await import("@livekit/react-native-webrtc");
     const stream = await mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t: any) => t.stop());
     return true;

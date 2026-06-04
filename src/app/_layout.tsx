@@ -11,7 +11,7 @@ import { convex } from "@/lib/convex";
 import { useOnboardingState } from "@/lib/onboarding";
 
 if (Platform.OS !== "web") {
-  require("@livekit/react-native").registerGlobals();
+  import("@livekit/react-native").then(({ registerGlobals }) => registerGlobals());
 }
 
 export default function TabLayout() {
@@ -22,6 +22,12 @@ export default function TabLayout() {
   useEffect(() => {
     initLocale().then(() => setLocaleReady(true));
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      document.title = "Palia";
+    }
+  });
 
   const ready = localeReady && onboardingReady;
 

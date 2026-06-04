@@ -1,6 +1,8 @@
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { useColorScheme } from "react-native";
 
+import exploreIcon from "@/assets/images/tabIcons/explore.png";
+import homeIcon from "@/assets/images/tabIcons/home.png";
 import { Colors } from "@/constants/theme";
 import { useTranslation } from "@/i18n";
 
@@ -26,7 +28,7 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>{homeLabel}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: "house", selected: "house.fill" }}
-          src={require("@/assets/images/tabIcons/home.png")}
+          src={homeIcon}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
@@ -35,7 +37,7 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>{historyLabel}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: "clock", selected: "clock.fill" }}
-          src={require("@/assets/images/tabIcons/explore.png")}
+          src={exploreIcon}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
@@ -44,7 +46,7 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>{settingsLabel}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           sf={{ default: "gearshape", selected: "gearshape.fill" }}
-          src={require("@/assets/images/tabIcons/explore.png")}
+          src={exploreIcon}
           renderingMode="template"
         />
       </NativeTabs.Trigger>

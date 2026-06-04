@@ -4,11 +4,11 @@ import { StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
-  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withTiming,
+  type SharedValue,
 } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/themed-text";
@@ -51,7 +51,7 @@ export function TodaySummary() {
   const deviceId = useDeviceId();
   const reduceMotion = useReduceMotion();
   const { t } = useTranslation();
-  const now = useMemo(() => Date.now(), []);
+  const [now] = useState(() => Date.now());
   const dayStart = useMemo(() => startOfLocalDay(now), [now]);
   const dayEnd = dayStart + DAY_MS;
   // HealthKit snapshot — read once on mount. Renders nothing if permission

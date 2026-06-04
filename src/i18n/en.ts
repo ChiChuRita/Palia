@@ -15,6 +15,7 @@ export const en = {
     exertion: "Exertion",
     energy: "Energy",
     deleteConfirm: "Remove this?",
+    explore: "Explore",
   },
   voice: {
     idle: "Tap to begin your check-in",

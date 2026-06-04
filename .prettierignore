@@ -1,1 +1,8 @@
+.agents/
+.claude/
+.convex/
+.expo/
+android/
 convex/_generated/*.d.ts
+ios/
+node_modules/

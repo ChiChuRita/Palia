@@ -5,7 +5,8 @@ import { type JobContext, ServerOptions, cli, defineAgent, llm, voice } from "@l
 import * as openai from "@livekit/agents-plugin-openai";
 import { z } from "zod";
 
-import { kickInstructionForLocale, promptForLocale } from "./interviewer.js";
+import { composeInstructions, kickInstructionForLocale } from "./interviewer.js";
+import { getVariant, styleForLocale } from "./variants.js";
 import {
   ACTIVITY_CATEGORY_KEYS,
   SYMPTOM_CATEGORY_KEYS,
@@ -17,10 +18,11 @@ import {
   correctLastActivity,
   correctLastSymptom,
   finalize,
-  formatHealthContext,
   recordActivity,
   recordSessionContext,
   recordSymptom,
+  summarizeHealthForPrompt,
+  summarizeSymptomPanelForPrompt,
   type HealthSnapshot,
 } from "./tools.js";
 
@@ -49,36 +51,67 @@ export default defineAgent({
     const participant = await ctx.waitForParticipant();
     let locale: string = "en";
     let healthSnapshot: HealthSnapshot | null = null;
+    let variantId: string | null = null;
+    let symptomPanel: string[] = [];
     try {
       const meta = participant.metadata;
       if (meta) {
         const parsed = JSON.parse(meta);
         if (typeof parsed.locale === "string") locale = parsed.locale;
+        if (typeof parsed.variant === "string") variantId = parsed.variant;
         if (parsed.healthSnapshot && typeof parsed.healthSnapshot === "object") {
           healthSnapshot = parsed.healthSnapshot as HealthSnapshot;
+        }
+        if (Array.isArray(parsed.symptomPanel)) {
+          // The user's recurring symptoms (server-derived, last 14 days) the
+          // agent asks by name every day. Validate against the taxonomy.
+          symptomPanel = parsed.symptomPanel.filter(
+            (c: unknown): c is SymptomCategory =>
+              typeof c === "string" && (SYMPTOM_CATEGORY_KEYS as readonly string[]).includes(c)
+          );
         }
       }
     } catch {
       /* leave defaults */
     }
-    console.log(`[mecfs-agent] locale=${locale} health=${healthSnapshot ? "yes" : "none"}`);
+    // Bot Lab: which of the 5 voice/pacing/tone variants to run this session.
+    const variant = getVariant(variantId);
+    console.log(
+      `[mecfs-agent] locale=${locale} variant=${variant.id} (${variant.label}) health=${healthSnapshot ? "yes" : "none"}`
+    );
+
+    // Live agent state, readable from tool closures (the session object is
+    // created after the tools). end_session uses this to disconnect only
+    // after the goodbye has actually finished playing out.
+    const agentActivity = { state: "initializing" };
 
     const agent = new voice.Agent({
-      instructions: promptForLocale(locale),
+      // Inject a compact "what you already know" briefing (sleep + load) so the
+      // questionnaire adapts from the first turn — e.g. it skips "how long did
+      // you sleep?" when the watch already knows. Raw HRV/resting-HR stay out:
+      // those are the Stage-2 analyst's job and the check-in stays silent on
+      // numbers.
+      instructions: composeInstructions(
+        locale,
+        styleForLocale(variant, locale),
+        // Two briefings share the slot: passive health ("don't ask what the
+        // watch knows") and the daily symptom panel ("ask these by name").
+        [
+          summarizeHealthForPrompt(healthSnapshot, locale),
+          summarizeSymptomPanelForPrompt(symptomPanel, locale),
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      ),
       tools: {
-        get_health_context: llm.tool({
-          description:
-            "Retrieve the user's recent HRV (with 7-day baseline), resting heart rate, last night's sleep, and yesterday's step count. Each field is a number or null. NULL means the data wasn't available — do not reference any field that is null. If ALL fields are null, do not mention biomarkers at all.",
-          execute: async () => JSON.stringify(formatHealthContext(healthSnapshot)),
-        }),
-
         record_symptom: llm.tool({
           description:
             "Record a symptom. Pick the closest category from the enum and put the user's own words in userWords.",
           parameters: z.object({
             category: symptomCategoryEnum,
             userWords: z.string(),
-            severity: z.number().min(1).max(5).nullish(),
+            // 0–5; 0 = a tracked panel symptom is NOT present today.
+            severity: z.number().min(0).max(5).nullish(),
             note: z.any().nullish(),
           }),
           execute: async (args) => {
@@ -94,7 +127,10 @@ export default defineAgent({
               severity: args.severity ?? undefined,
               note,
             });
-            return "ok";
+            // The tool result is the model's next read — use it to re-arm the
+            // interview loop. A bare "ok" makes realtime models treat the tool
+            // call as a finished turn and go silent.
+            return "recorded. Now speak: a few warm words, then a question — their thread first, otherwise the next open box.";
           },
         }),
 
@@ -118,7 +154,7 @@ export default defineAgent({
               exertion: args.exertion ?? undefined,
               durationMinutes: args.durationMinutes ?? undefined,
             });
-            return "ok";
+            return "recorded. Now speak: a few warm words, then a question — their thread first, otherwise the next open box.";
           },
         }),
 
@@ -128,7 +164,7 @@ export default defineAgent({
           parameters: z.object({
             category: symptomCategoryEnum.nullish(),
             userWords: z.string().nullish(),
-            severity: z.number().min(1).max(5).nullish(),
+            severity: z.number().min(0).max(5).nullish(),
             note: z.any().nullish(),
           }),
           execute: async (args) => {
@@ -144,7 +180,7 @@ export default defineAgent({
               severity: args.severity ?? undefined,
               note,
             });
-            return "ok";
+            return 'corrected. Acknowledge softly ("Got it — two.") and continue with the next open question.';
           },
         }),
 
@@ -168,7 +204,7 @@ export default defineAgent({
               exertion: args.exertion ?? undefined,
               durationMinutes: args.durationMinutes ?? undefined,
             });
-            return "ok";
+            return "corrected. Acknowledge softly and continue with the next open question.";
           },
         }),
 
@@ -184,13 +220,13 @@ export default defineAgent({
               sleepHours: args.sleepHours ?? undefined,
               hadPEMToday: args.hadPEMToday ?? undefined,
             });
-            return "ok";
+            return "recorded. Now speak: a few warm words, then a question — their thread first, otherwise the next open box.";
           },
         }),
 
         end_session: llm.tool({
           description:
-            "Close the check-in. Call exactly once at the end of the conversation, AFTER you have already spoken your goodbye.",
+            "Close the check-in. Call this once, in the SAME response as your spoken goodbye — say the goodbye, then immediately call this. Never wait for another user turn.",
           parameters: z.object({
             summary: z.string(),
             energy_score: z.number().min(1).max(5),
@@ -203,14 +239,30 @@ export default defineAgent({
               energyScore: args.energy_score,
               flags: args.flags ?? undefined,
             });
-            // 4s grace window: gives any post-tool model speech room to play
-            // out. The prompt now also instructs the agent to say its goodbye
-            // BEFORE calling this tool, so this is mostly insurance.
-            setTimeout(() => {
-              console.log("[mecfs-agent] disconnecting after end_session");
-              ctx.room.disconnect().catch(() => {});
-            }, 4000);
-            return "ok";
+            // Disconnect only after the goodbye has PLAYED OUT. The old fixed
+            // 4s window clipped longer goodbyes mid-word. Poll the agent
+            // state: wait for speech to start (it may already be playing, or
+            // begin right after this tool returns), then for it to end.
+            // Caps: 6s for speech that never starts, 15s overall.
+            const t0 = Date.now();
+            let sawSpeech = agentActivity.state === "speaking";
+            const timer = setInterval(() => {
+              if (agentActivity.state === "speaking") sawSpeech = true;
+              const elapsed = Date.now() - t0;
+              const playoutDone = sawSpeech
+                ? agentActivity.state !== "speaking"
+                : elapsed > 6000; // model never spoke a goodbye — bail
+              if (playoutDone || elapsed > 15000) {
+                clearInterval(timer);
+                // Small tail buffer: agent-side "stopped speaking" runs a
+                // beat ahead of the phone's jitter-buffered playback.
+                setTimeout(() => {
+                  console.log("[mecfs-agent] disconnecting after end_session");
+                  ctx.room.disconnect().catch(() => {});
+                }, 800);
+              }
+            }, 200);
+            return "session closed. Do not speak again.";
           },
         }),
       },
@@ -219,30 +271,19 @@ export default defineAgent({
     const session = new voice.AgentSession({
       llm: new openai.realtime.RealtimeModel({
         model: "gpt-realtime-2",
-        voice: "ballad",
+        // Voice, speaking rate, and turn detection all come from the active
+        // Bot Lab variant (see variants.ts) so we can A/B them from the app.
+        voice: variant.voice,
+        speed: variant.speed,
         // NOTE: temperature is intentionally not set — the GA Realtime API
         // (v1) removed it ("Temperature is no longer supported" per the
         // plugin types). Voice consistency comes from the prompt + voice
         // choice, not a temperature knob.
         inputAudioTranscription: { model: "whisper-1" },
         inputAudioNoiseReduction: { type: "near_field" },
-        turnDetection: {
-          type: "server_vad",
-          // 0.6 = balanced. Was 0.8 (very aggressive — felt slow). OpenAI's
-          // default is 0.5; we sit slightly above to avoid VAD-on-breath.
-          threshold: 0.6,
-          prefix_padding_ms: 300,
-          // 300ms silence before responding — matches natural human turn-
-          // taking (research pegs it around 200ms gap between turns). Below
-          // 300ms it starts cutting people off mid-thought; above 500ms it
-          // feels like a slow assistant. Trade-off note: brain-fog users
-          // who pause >300ms mid-sentence will get interrupted; if real
-          // users complain about this, bump back to 500–600ms.
-          silence_duration_ms: 300,
-          // Do not let VAD interrupt the agent's playout — false-positives
-          // would cut it off mid-word.
-          interrupt_response: false,
-        },
+        // interrupt_response stays false across all variants — this population
+        // should never be talked over mid-thought.
+        turnDetection: variant.turnDetection,
       }),
     });
 
@@ -275,9 +316,17 @@ export default defineAgent({
     let agentSpoke = false;
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
       if (ev.newState === "speaking") agentSpoke = true;
+      // Mirror the live state for tool closures (end_session playout wait).
+      agentActivity.state = ev.newState;
     });
 
     await session.start({ agent, room: ctx.room });
+
+    // Let the phone's playback path finish standing up before the first
+    // word. Greeting immediately after start races the client's track
+    // subscription + audio-unit spin-up, and the first syllable's frames
+    // get swallowed ("the first ms are missing").
+    await new Promise((r) => setTimeout(r, 600));
 
     const GREETING_ATTEMPTS = 4;
     const GREETING_WAIT_MS = 4000;

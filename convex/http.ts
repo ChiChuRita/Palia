@@ -25,7 +25,8 @@ const AgentEventSchema = z.discriminatedUnion("type", [
     sessionId: z.string().min(1),
     category: symptomCategoryEnum,
     userWords: z.string().min(1),
-    severity: z.number().min(1).max(5).optional(),
+    // 0–5; 0 = the daily panel asked and the symptom is NOT present today.
+    severity: z.number().min(0).max(5).optional(),
     note: z.string().optional(),
   }),
   z.object({
@@ -53,7 +54,7 @@ const AgentEventSchema = z.discriminatedUnion("type", [
     sessionId: z.string().min(1),
     category: symptomCategoryEnum.optional(),
     userWords: z.string().min(1).optional(),
-    severity: z.number().min(1).max(5).optional(),
+    severity: z.number().min(0).max(5).optional(),
     note: z.string().optional(),
   }),
   z.object({

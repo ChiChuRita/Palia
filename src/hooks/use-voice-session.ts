@@ -1,9 +1,10 @@
 import { api } from "@/../convex/_generated/api";
 import type { Id } from "@/../convex/_generated/dataModel";
 import { getLocale } from "@/i18n";
+import { isDemoMode } from "@/lib/demo-mode";
 import { getOrCreateDeviceId } from "@/lib/device-id";
 import { readHealthSnapshot } from "@/lib/health";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useConvex, useMutation } from "convex/react";
 import { Room, RoomEvent, Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
@@ -17,10 +18,16 @@ const FALLBACK_AUDIO_SESSION = {
 
 let AudioSession: any = FALLBACK_AUDIO_SESSION;
 
+// start() awaits this so a tap right after a cold launch can't race the
+// dynamic import and run the call on the no-op fallback (= no audio config).
+let audioSessionReady: Promise<unknown> = Promise.resolve();
+
 if (Platform.OS !== "web") {
-  import("@livekit/react-native").then((module) => {
-    AudioSession = module.AudioSession;
-  });
+  audioSessionReady = import("@livekit/react-native")
+    .then((module) => {
+      AudioSession = module.AudioSession;
+    })
+    .catch(() => {});
 }
 
 export type VoiceState =
@@ -60,11 +67,20 @@ export function useVoiceSession() {
   // event for it; we sample). Smoothing handled below.
   const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const smoothedLevelRef = useRef(0);
+  // Bumped by cleanup() to invalidate any in-flight start(). Without this,
+  // tapping End while still 'connecting' lets the rest of start() race on:
+  // room.connect() fights the disconnect (livekit-client's unhandled
+  // "NegotiationError: PC manager is closed"), the leaked room stays
+  // connected outside roomRef, and the final setStatus resurrects the UI
+  // back to 'preparing' after end() already reset it to idle.
+  const startGenRef = useRef(0);
 
   const mintToken = useAction(api.livekit.mintToken);
   const markAbandoned = useMutation(api.sessions.markAbandoned);
+  const convex = useConvex();
 
   const cleanup = useCallback(() => {
+    startGenRef.current++; // invalidate any in-flight start()
     const room = roomRef.current;
     if (room) {
       room.removeAllListeners();
@@ -100,146 +116,210 @@ export function useVoiceSession() {
     setStatus(INITIAL);
   }, [cleanup, markAbandoned]);
 
-  const start = useCallback(async () => {
-    agentHasSpokenRef.current = false;
-    micEnabledRef.current = false;
-    setStatus({ state: "connecting", error: null, sessionId: null });
-    try {
-      const deviceId = await getOrCreateDeviceId();
-      // Read HealthKit snapshot before minting the token so it rides along
-      // in the participant metadata. Non-blocking on failure — snapshot can
-      // be all-null (no Apple Watch, denied permission, simulator, etc.).
-      const healthSnapshot = await readHealthSnapshot().catch(() => null);
-      const { token, url, sessionId } = await mintToken({
-        deviceId,
-        locale: getLocale(),
-        healthSnapshot: healthSnapshot ?? undefined,
-      });
-      sessionIdRef.current = sessionId;
-
-      // Critical: configure iOS audio for voice chat BEFORE connecting.
-      // This enables AVAudioSession voiceChat mode → echo cancellation +
-      // automatic gain control. Without this, the agent hears its own
-      // voice via the speaker and interrupts itself mid-sentence.
-      await AudioSession.configureAudio({
-        ios: { defaultOutput: "speaker" },
-      });
-      await AudioSession.startAudioSession();
-      await AudioSession.setAppleAudioConfiguration({
-        audioCategory: "playAndRecord",
-        audioCategoryOptions: ["allowBluetooth", "defaultToSpeaker"],
-        audioMode: "voiceChat",
-      });
-
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
-      roomRef.current = room;
-
-      // Agent participant joined and/or audio track subscribed:
-      // agent is in the room but hasn't started talking yet. Show 'preparing'.
-      room.on(RoomEvent.ParticipantConnected, () => {
-        setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
-      });
-      room.on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind !== Track.Kind.Audio) return;
-        setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
-      });
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-        const r = roomRef.current;
-        const agentSpeaking = speakers.some((p) => p.identity !== deviceId && p.isSpeaking);
-        if (agentSpeaking) agentHasSpokenRef.current = true;
-
-        // Enable the mic only after the agent's first turn has ENDED (i.e.
-        // agent has spoken at least once, and is now silent). This is the key
-        // fix for the slow-start problem: with the mic off during the
-        // greeting, the model doesn't get spurious user-speech events that
-        // make it wait silently.
-        if (agentHasSpokenRef.current && !agentSpeaking && !micEnabledRef.current && r) {
-          micEnabledRef.current = true;
-          r.localParticipant.setMicrophoneEnabled(true).catch(() => {});
-          if (micFallbackTimerRef.current) {
-            clearTimeout(micFallbackTimerRef.current);
-            micFallbackTimerRef.current = null;
-          }
-        }
-
-        setStatus((s) => {
-          if (s.state === "ending" || s.state === "error") return s;
-          if (!agentHasSpokenRef.current && !agentSpeaking) {
-            return { ...s, state: "preparing" };
-          }
-          return { ...s, state: agentSpeaking ? "speaking" : "listening" };
+  const start = useCallback(
+    async (variant?: string) => {
+      agentHasSpokenRef.current = false;
+      micEnabledRef.current = false;
+      setStatus({ state: "connecting", error: null, sessionId: null });
+      // This start()'s generation. cleanup() (End tap, unmount, error) bumps
+      // the counter; checking it after every await lets us bail instead of
+      // racing a torn-down call. See startGenRef above.
+      const gen = ++startGenRef.current;
+      const stale = () => startGenRef.current !== gen;
+      try {
+        await audioSessionReady;
+        const deviceId = await getOrCreateDeviceId();
+        // Read HealthKit snapshot before minting the token so it rides along
+        // in the participant metadata. Non-blocking on failure — snapshot can
+        // be all-null (no Apple Watch, denied permission, simulator, etc.).
+        // In demo mode, brief the agent from the SEEDED snapshot in Convex
+        // instead — the real read would contradict the seeded scenario. The
+        // full biomarker set rides along (incl. server-computed baselines) so
+        // the agent can gently name an off-baseline signal ("your HRV looked
+        // quite low overnight") per the rules in its health briefing.
+        const healthSnapshot = (await isDemoMode().catch(() => false))
+          ? await convex
+              .query(api.health.latestSnapshot, { deviceId })
+              .then((snap) =>
+                snap
+                  ? {
+                      hrvMs: snap.hrvMs,
+                      hrvBaselineMs: snap.hrvBaselineMs,
+                      restingHrBpm: snap.restingHrBpm,
+                      rhrBaseline7d: snap.rhrBaseline7d,
+                      sleepHoursLastNight: snap.sleepHours,
+                      stepsToday: null,
+                      stepsYesterday: snap.steps,
+                    }
+                  : null
+              )
+              .catch(() => null)
+          : await readHealthSnapshot().catch(() => null);
+        const { token, url, sessionId } = await mintToken({
+          deviceId,
+          locale: getLocale(),
+          variant,
+          healthSnapshot: healthSnapshot ?? undefined,
         });
-      });
-      // The agent ends the conversation by calling end_session, which
-      // finalizes the session and then disconnects ITSELF from the room
-      // (agent/src/index.ts). That only removes the agent participant — our
-      // side stays connected with the mic open. So when the agent leaves,
-      // tear down our connection too; this triggers the Disconnected handler
-      // below, which does the full cleanup and returns us to 'idle'.
-      room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-        if (participant.identity === deviceId) return; // only the agent
-        roomRef.current?.disconnect().catch(() => {});
-      });
-      room.on(RoomEvent.Disconnected, () => {
-        const sid = sessionIdRef.current;
+        if (stale()) {
+          // User ended the call while we were minting the token. The session
+          // row exists but nothing ever connected — mark it abandoned now
+          // instead of waiting for the orphan reaper cron.
+          markAbandoned({ sessionId }).catch(() => {});
+          return;
+        }
+        sessionIdRef.current = sessionId;
+
+        // Critical: configure iOS audio BEFORE connecting. configureAudio
+        // stores LiveKit's session template: playAndRecord + defaultToSpeaker
+        // + videoChat mode (speaker-tuned echo cancellation + AGC — same
+        // "chat" signal processing as voiceChat, but at media loudness).
+        // WebRTC re-applies this template whenever its audio unit starts, so
+        // it MUST be the only config we set: a competing one-shot
+        // setAppleAudioConfiguration(voiceChat) here used to make the first
+        // words play receiver-tuned (quiet) until WebRTC flipped the session
+        // back to the template — the "low volume at the beginning" — and the
+        // mid-flight reconfiguration intermittently threw OSStatus -50.
+        await AudioSession.configureAudio({
+          ios: { defaultOutput: "speaker" },
+        });
+        await AudioSession.startAudioSession();
+
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+        roomRef.current = room;
+
+        // Agent participant joined and/or audio track subscribed:
+        // agent is in the room but hasn't started talking yet. Show 'preparing'.
+        room.on(RoomEvent.ParticipantConnected, () => {
+          setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
+        });
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind !== Track.Kind.Audio) return;
+          setStatus((s) => (s.state === "connecting" ? { ...s, state: "preparing" } : s));
+        });
+        room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+          const r = roomRef.current;
+          const agentSpeaking = speakers.some((p) => p.identity !== deviceId && p.isSpeaking);
+          if (agentSpeaking) agentHasSpokenRef.current = true;
+
+          // Enable the mic only after the agent's first turn has ENDED (i.e.
+          // agent has spoken at least once, and is now silent). This is the key
+          // fix for the slow-start problem: with the mic off during the
+          // greeting, the model doesn't get spurious user-speech events that
+          // make it wait silently.
+          if (agentHasSpokenRef.current && !agentSpeaking && !micEnabledRef.current && r) {
+            micEnabledRef.current = true;
+            r.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+            if (micFallbackTimerRef.current) {
+              clearTimeout(micFallbackTimerRef.current);
+              micFallbackTimerRef.current = null;
+            }
+          }
+
+          setStatus((s) => {
+            if (s.state === "ending" || s.state === "error") return s;
+            if (!agentHasSpokenRef.current && !agentSpeaking) {
+              return { ...s, state: "preparing" };
+            }
+            return { ...s, state: agentSpeaking ? "speaking" : "listening" };
+          });
+        });
+        // The agent ends the conversation by calling end_session, which
+        // finalizes the session and then disconnects ITSELF from the room
+        // (agent/src/index.ts). That only removes the agent participant — our
+        // side stays connected with the mic open. So when the agent leaves,
+        // tear down our connection too; this triggers the Disconnected handler
+        // below, which does the full cleanup and returns us to 'idle'.
+        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+          if (participant.identity === deviceId) return; // only the agent
+          roomRef.current?.disconnect().catch(() => {});
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          const sid = sessionIdRef.current;
+          sessionIdRef.current = null;
+          setStatus(INITIAL);
+          // Network drop, force-quit, or any disconnect that didn't go through
+          // end_session: tell Convex so the session doesn't sit "active" forever.
+          // markAbandoned is a no-op if the session is already completed (agent
+          // ended cleanly), so this is always safe to call on disconnect.
+          if (sid) {
+            markAbandoned({ sessionId: sid }).catch(() => {});
+          }
+          // Full teardown — not just the audio session. Without this, the
+          // 12 Hz level-poll interval, the mic fallback timer, and roomRef
+          // all outlive the call after every normal (agent-ended) check-in.
+          cleanup();
+        });
+
+        await room.connect(url, token);
+        if (stale()) {
+          // Ended while connecting: tear down the room this start() created
+          // (cleanup() only knew about roomRef, which it already nulled).
+          room.removeAllListeners();
+          room.disconnect().catch(() => {});
+          markAbandoned({ sessionId }).catch(() => {});
+          return;
+        }
+        // Publish the mic immediately but MUTED. iOS only runs the voice-
+        // processing unit (echo cancellation + AGC + final output gain) while
+        // capture is live, so publishing late — after the greeting — meant:
+        //  (a) the greeting played through a playback-only unit at lower
+        //      gain, then jumped louder when the mic finally published
+        //      ("starts quiet at the beginning"), and
+        //  (b) the echo canceller had zero time to converge before the
+        //      agent's next sentence, so its tail leaked into the fresh mic,
+        //      VAD committed it as a user turn, and the model answered its
+        //      own question ("That sounds rough").
+        // Muted = capture warm, but pure silence upstream — the mic-gating
+        // story (no VAD before the greeting ends) still holds. The unmute
+        // happens in the ActiveSpeakersChanged handler above.
+        await room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+        await room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+
+        // Safety net: if the agent fails to speak within 10 sec (model error,
+        // disconnect, etc.), unlock the mic so the user can at least try.
+        micFallbackTimerRef.current = setTimeout(() => {
+          const r = roomRef.current;
+          if (r && !micEnabledRef.current) {
+            micEnabledRef.current = true;
+            r.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+          }
+        }, 10_000);
+
+        // Sample the agent's audio level periodically for the orb pulse.
+        // LiveKit doesn't emit events for audioLevel, so we poll at 12 Hz and
+        // apply a low-pass to avoid jittery animation.
+        levelTimerRef.current = setInterval(() => {
+          const r = roomRef.current;
+          if (!r) return;
+          let max = 0;
+          r.remoteParticipants.forEach((p) => {
+            if (p.identity === deviceId) return;
+            if (p.audioLevel > max) max = p.audioLevel;
+          });
+          // Exponential moving average for smoothness (~150ms time constant).
+          smoothedLevelRef.current = smoothedLevelRef.current * 0.7 + max * 0.3;
+          setAgentLevel(smoothedLevelRef.current);
+        }, 80);
+
+        // Stay in 'preparing' until ActiveSpeakersChanged flips us to 'speaking'.
+        setStatus({ state: "preparing", error: null, sessionId });
+      } catch (err) {
+        if (stale()) return; // user already ended; don't flash an error state
+        cleanup();
         sessionIdRef.current = null;
-        setStatus(INITIAL);
-        // Network drop, force-quit, or any disconnect that didn't go through
-        // end_session: tell Convex so the session doesn't sit "active" forever.
-        // markAbandoned is a no-op if the session is already completed (agent
-        // ended cleanly), so this is always safe to call on disconnect.
-        if (sid) {
-          markAbandoned({ sessionId: sid }).catch(() => {});
-        }
-        AudioSession.stopAudioSession().catch(() => {});
-      });
-
-      await room.connect(url, token);
-      // NOTE: mic is intentionally NOT enabled here. It gets enabled in the
-      // ActiveSpeakersChanged handler once the agent has finished its
-      // greeting. See the explanation above.
-
-      // Safety net: if the agent fails to speak within 10 sec (model error,
-      // disconnect, etc.), unlock the mic so the user can at least try.
-      micFallbackTimerRef.current = setTimeout(() => {
-        const r = roomRef.current;
-        if (r && !micEnabledRef.current) {
-          micEnabledRef.current = true;
-          r.localParticipant.setMicrophoneEnabled(true).catch(() => {});
-        }
-      }, 10_000);
-
-      // Sample the agent's audio level periodically for the orb pulse.
-      // LiveKit doesn't emit events for audioLevel, so we poll at 12 Hz and
-      // apply a low-pass to avoid jittery animation.
-      levelTimerRef.current = setInterval(() => {
-        const r = roomRef.current;
-        if (!r) return;
-        let max = 0;
-        r.remoteParticipants.forEach((p) => {
-          if (p.identity === deviceId) return;
-          if (p.audioLevel > max) max = p.audioLevel;
+        setStatus({
+          state: "error",
+          error: err instanceof Error ? err.message : "failed to start",
+          sessionId: null,
         });
-        // Exponential moving average for smoothness (~150ms time constant).
-        smoothedLevelRef.current = smoothedLevelRef.current * 0.7 + max * 0.3;
-        setAgentLevel(smoothedLevelRef.current);
-      }, 80);
-
-      // Stay in 'preparing' until ActiveSpeakersChanged flips us to 'speaking'.
-      setStatus({ state: "preparing", error: null, sessionId });
-    } catch (err) {
-      cleanup();
-      sessionIdRef.current = null;
-      setStatus({
-        state: "error",
-        error: err instanceof Error ? err.message : "failed to start",
-        sessionId: null,
-      });
-    }
-  }, [cleanup, mintToken, markAbandoned]);
+      }
+    },
+    [cleanup, mintToken, markAbandoned, convex]
+  );
 
   return { ...status, start, end, agentLevel };
 }

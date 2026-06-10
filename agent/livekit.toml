@@ -1,10 +1,8 @@
-# LiveKit Cloud Agent deploy config.
-# Run `lk agent create` once to populate `project_id` and `id` from your account,
-# then `lk agent deploy` to ship.
-
 [project]
-subdomain = "your-project"   # replace with your LiveKit Cloud project subdomain
+  subdomain = "mecfs-ge1639t4"
 
 [agent]
-name = "mecfs-interviewer"
-# id = "auto-filled by `lk agent create`"
+  # Deleted from LiveKit Cloud for now (the first deploy shipped without CA
+  # certs and stole dev calls). Re-create with: lk agent create --region
+  # eu-central --secrets-file <secrets> .  — the Dockerfile fix is in place.
+  name = "mecfs-interviewer"

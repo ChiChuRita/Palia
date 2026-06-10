@@ -41,6 +41,77 @@ export const de: Translations = {
     sleepHours: "%{value}h Schlaf",
     hrv: "HRV %{value}ms",
     steps: "%{value} Schritte",
+    stepsYesterday: "%{value} Schritte gestern",
+  },
+  insights: {
+    tab: "Einblicke",
+    title: "Heutige Einschätzung",
+    subtitle: "KI-Pacing aus deiner Uhr und deinen Check-ins",
+    analyzeNow: "Heute analysieren",
+    analyzing: "Analysiere…",
+    none: "Heute noch keine Analyse",
+    noneBody:
+      "Check dich ein, wenn du magst — oder tippe auf „Heute analysieren“ für eine Einschätzung allein aus deinen Uhr-Daten. Ganz ohne Sprechen.",
+    scoreLabel: "Stabilität",
+    analyzingTitle: "Lese deinen Tag…",
+    analyzingBody:
+      "Ich schaue mir deine nächtlichen Signale und den Check-in an. Das dauert einen Moment.",
+    reanalyze: "Neu analysieren",
+    notEnoughData: "Noch nicht genug Daten",
+    notEnoughDataBody:
+      "Uhr synchronisieren und einchecken — die Einschätzung aktualisiert sich von selbst.",
+    basedOnResearch: "Auf Forschung basierend",
+    levelGreen: "Stabiler Tag",
+    levelYellow: "Geh es sanft an",
+    levelRed: "Ruhetag",
+    riskLabel: "PEM-Risiko",
+    riskLow: "Niedrig",
+    riskMedium: "Mittel",
+    riskHigh: "Hoch",
+    triggerLabel: "Wahrscheinlicher Auslöser",
+    driversTitle: "Was den Wert heute geprägt hat",
+  },
+  science: {
+    title: "Die Wissenschaft dahinter",
+    intro:
+      "Deine Pacing-Einschätzung beruht auf klinischen Leitlinien und Forschung zu ME/CFS und Long COVID. Das fließt ein.",
+    disclaimer:
+      "Dies sind allgemeine, informative Quellen, keine medizinische Beratung. Folge immer deinem Behandlungsteam.",
+    relevantSection: "Was die heutige Einschätzung geprägt hat",
+    moreSection: "Mehr zur Pacing-Forschung",
+    allSection: "Pacing-Forschung",
+    entries: {
+      hrv_pacing: {
+        title: "Herzratenvariabilität & Pacing",
+        summary:
+          "Eine morgendliche HRV deutlich unter deinem persönlichen Normalwert zeigt, dass dein Nervensystem unter Last steht. An solchen Tagen kürzerzutreten hilft, einen Crash zu vermeiden.",
+      },
+      rhr_strain: {
+        title: "Ruhepuls als Belastungssignal",
+        summary:
+          "Ein Ruhepuls, der mehrere Schläge über deinem üblichen Wert liegt, ist ein frühes Zeichen körperlicher Belastung. Einen erhöhten Morgenwert als „heute sanft“ zu lesen, ist gängige Pacing-Praxis.",
+      },
+      sleep_quality: {
+        title: "Schlaf & Erholung",
+        summary:
+          "Nicht erholsamer, kurzer oder unterbrochener Schlaf ist ein Kernmerkmal von ME/CFS und einer der stärksten Tagesindikatoren für deine Kapazität. Eine kurze Nacht senkt das Energielimit des Tages.",
+      },
+      energy_envelope: {
+        title: "Das Energielimit",
+        summary:
+          "Die Energielimit-Theorie heißt, innerhalb dessen zu bleiben, was dein Körper tragen kann — oft etwa die Hälfte des Gefühlten zu tun und vor der Erschöpfung zu ruhen, um eine stabile Basis zu halten.",
+      },
+      pem_avoidance: {
+        title: "Post-exertionelle Malaise (PEM) vermeiden",
+        summary:
+          "PEM ist ein verzögerter Crash, der 12–48 Stunden nach Überlastung folgen und Tage dauern kann. Pacing zielt darauf, unter der auslösenden Schwelle zu bleiben, statt durchzuhalten und später zu zahlen.",
+      },
+      pacing_general: {
+        title: "Pacing bei ME/CFS & Long COVID",
+        summary:
+          "Klinische Leitlinien (u. a. NICE 2021) empfehlen Pacing und Energiemanagement — kein Durchhalten. Ruhe gehört zur Erholung und ist nie ein Versagen.",
+      },
+    },
   },
   history: {
     title: "Verlauf",
@@ -91,9 +162,18 @@ export const de: Translations = {
     title: "Einstellungen",
     language: "Sprache",
     languageBody: "Wird für die App und für deine Check-in-Gespräche verwendet.",
+    reminder: "Tägliche Erinnerung",
+    reminderBody: "Ein sanfter Anstoß jeden Morgen für deinen Check-in.",
+    reminderEnable: "Täglich erinnern",
+    reminderAt: "Erinnerungszeit",
     danger: "Zurücksetzen",
     resetOnboarding: "Einführung erneut anzeigen",
     resetOnboardingBody: "Beim nächsten Start wird der Willkommens-Flow nochmal gezeigt.",
+  },
+  reminder: {
+    notifTitle: "Guten Morgen",
+    notifBody: "Ein ruhiger Moment zum Einchecken — wie wachst du auf?",
+    channelName: "Täglicher Check-in",
   },
   onboarding: {
     welcomeTitle: "Ein ruhiger Weg, ME/CFS zu begleiten",
@@ -113,6 +193,12 @@ export const de: Translations = {
       "Wenn du eine Apple Watch trägst, können wir Schlaf, HRV, Ruhepuls und Aktivität sanft im Check-in erwähnen. Wir lesen nur — wir schreiben nie.",
     healthGrant: "Erlauben",
     healthSkip: "Jetzt nicht",
+    reminderTitle: "Eine tägliche Erinnerung",
+    reminderBody:
+      "Check-ins gelingen am besten gleich morgens, solange Schlaf und Erholung der letzten Nacht frisch sind. Wir schicken einen sanften Anstoß pro Tag — keine Streaks, kein Druck.",
+    reminderEvery: "Erinnere mich um",
+    reminderGrant: "Erinnerung aktivieren",
+    reminderSkip: "Jetzt nicht",
     done: "Loslegen",
   },
 };

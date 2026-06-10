@@ -39,6 +39,75 @@ export const en = {
     sleepHours: "%{value}h sleep",
     hrv: "HRV %{value}ms",
     steps: "%{value} steps",
+    stepsYesterday: "%{value} steps yesterday",
+  },
+  insights: {
+    tab: "Insights",
+    title: "Today's read",
+    subtitle: "AI pacing guidance from your watch and check-ins",
+    analyzeNow: "Analyze today",
+    analyzing: "Analyzing…",
+    none: "No analysis yet today",
+    noneBody:
+      "Check in when you're ready — or tap “Analyze today” for a read from your watch data alone. No talking needed.",
+    scoreLabel: "Stability",
+    analyzingTitle: "Reading your day…",
+    analyzingBody: "Looking over your overnight signals and check-in. This takes a moment.",
+    reanalyze: "Re-analyze",
+    notEnoughData: "Not enough data yet",
+    notEnoughDataBody: "Sync your watch and check in — your read updates on its own.",
+    basedOnResearch: "Based on research",
+    levelGreen: "Steady day",
+    levelYellow: "Take it gentle",
+    levelRed: "Rest day",
+    riskLabel: "PEM risk",
+    riskLow: "Low",
+    riskMedium: "Medium",
+    riskHigh: "High",
+    triggerLabel: "Likely driver",
+    driversTitle: "What shaped this score",
+  },
+  science: {
+    title: "The science behind this",
+    intro:
+      "Your pacing read is grounded in clinical guidance and research on ME/CFS and Long COVID. Here's what informs it.",
+    disclaimer:
+      "These are general educational sources, not medical advice. Always follow your own care team.",
+    relevantSection: "What shaped today's read",
+    moreSection: "More on pacing science",
+    allSection: "Pacing science",
+    entries: {
+      hrv_pacing: {
+        title: "Heart-rate variability & pacing",
+        summary:
+          "A morning HRV well below your personal baseline is a sign your nervous system is under load. Easing off when HRV dips helps you avoid pushing into a crash.",
+      },
+      rhr_strain: {
+        title: "Resting heart rate as a strain signal",
+        summary:
+          "A resting heart rate raised several beats above your usual is an early marker of physiological strain. Treating an elevated morning reading as a 'go gentle' cue is a long-standing pacing practice.",
+      },
+      sleep_quality: {
+        title: "Sleep & recovery",
+        summary:
+          "Unrefreshing, short, or broken sleep is a core feature of ME/CFS and one of the strongest day-to-day predictors of capacity. A short night lowers the day's energy envelope.",
+      },
+      energy_envelope: {
+        title: "The energy envelope",
+        summary:
+          "Energy-envelope theory means staying within the limit your body can sustain — often doing about half of what you feel capable of, and resting before exhaustion, to keep a stable baseline.",
+      },
+      pem_avoidance: {
+        title: "Avoiding post-exertional malaise (PEM)",
+        summary:
+          "PEM is a delayed crash that can follow overexertion by 12–48 hours and last days. Pacing aims to stay below the threshold that triggers it, rather than push through and pay for it later.",
+      },
+      pacing_general: {
+        title: "Pacing in ME/CFS & Long COVID",
+        summary:
+          "Clinical guidance (including NICE 2021) recommends pacing and energy management — not pushing through. Rest is part of recovery, never a failure.",
+      },
+    },
   },
   history: {
     title: "History",
@@ -89,9 +158,18 @@ export const en = {
     title: "Settings",
     language: "Language",
     languageBody: "Used for the app and for your check-in conversations.",
+    reminder: "Daily reminder",
+    reminderBody: "A gentle nudge each morning to do your check-in.",
+    reminderEnable: "Remind me each day",
+    reminderAt: "Reminder time",
     danger: "Reset",
     resetOnboarding: "Re-run onboarding",
     resetOnboardingBody: "Show the welcome flow again on next launch.",
+  },
+  reminder: {
+    notifTitle: "Good morning",
+    notifBody: "A quiet moment to check in — how are you waking up?",
+    channelName: "Daily check-in",
   },
   onboarding: {
     welcomeTitle: "A calmer way to track ME/CFS",
@@ -111,6 +189,12 @@ export const en = {
       "If you wear an Apple Watch, we can gently reference your sleep, HRV, resting heart rate and activity during the check-in. We only read — we never write.",
     healthGrant: "Allow Health",
     healthSkip: "Not now",
+    reminderTitle: "A daily reminder",
+    reminderBody:
+      "Check-ins work best first thing in the morning, while last night's sleep and recovery are fresh. We'll send one gentle nudge a day — no streaks, no pressure.",
+    reminderEvery: "Remind me at",
+    reminderGrant: "Turn on reminder",
+    reminderSkip: "Not now",
     done: "Get started",
   },
 };

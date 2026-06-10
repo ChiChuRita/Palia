@@ -1,5 +1,7 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { markInsightAnalyzing } from "./insights";
 
 export const start = mutation({
   args: { deviceId: v.string() },
@@ -70,6 +72,36 @@ export const recordActivity = internalMutation({
       exertion: args.exertion,
       durationMinutes: args.durationMinutes,
     });
+  },
+});
+
+// The user's recurring symptoms over the last 14 days — the agent asks these
+// by name every morning (Visible-style fixed panel) so symptom data becomes a
+// dense daily series instead of volunteer-only sparse mentions. Excludes
+// categories the checklist already covers (pem, unrefreshing_sleep) and
+// severity-0 rows ("asked, not present") so absence days don't keep a symptom
+// on the panel forever. Needs >=2 mentions to qualify; top 3 by frequency.
+export const topSymptomCategoriesForDevice = internalQuery({
+  args: { deviceId: v.string(), sinceMs: v.number() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("symptoms")
+      .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
+      .order("desc")
+      .take(300);
+    const excluded = new Set(["other", "pem", "unrefreshing_sleep"]);
+    const counts = new Map<string, number>();
+    for (const s of rows) {
+      if (s._creationTime < args.sinceMs) continue;
+      if (s.severity === 0) continue;
+      if (excluded.has(s.category)) continue;
+      counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([category]) => category);
   },
 });
 
@@ -273,12 +305,31 @@ export const finalize = internalMutation({
     flags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
     await ctx.db.patch(args.sessionId, {
       endedAt: Date.now(),
       summary: args.summary,
       energyScore: args.energyScore,
       flags: args.flags,
       status: "completed",
+    });
+
+    // The check-in just ended — kick off the Stage-2 pacing analysis (gpt-5.5,
+    // high reasoning) in the background. We key it to today's stored health
+    // snapshot (the client's local day) so the auto-run and the manual
+    // "Re-analyze" never write to two different dateKeys. We show the Insights
+    // screen an "analyzing" placeholder immediately, then schedule the analyst.
+    const snap = await ctx.db
+      .query("healthSnapshots")
+      .withIndex("by_device_date", (q) => q.eq("deviceId", session.deviceId))
+      .order("desc")
+      .first();
+    const dateKey = snap?.dateKey ?? new Date(session.startedAt).toISOString().slice(0, 10);
+    await markInsightAnalyzing(ctx, session.deviceId, dateKey);
+    await ctx.scheduler.runAfter(0, internal.insights.runAnalysis, {
+      deviceId: session.deviceId,
+      dateKey,
     });
   },
 });
@@ -450,6 +501,9 @@ export const weeklyAggregates = query({
 
     const symMap = new Map<string, SymAgg>();
     for (const s of recentSym) {
+      // severity 0 = "asked, not present today" (daily panel) — a non-occurrence,
+      // not a symptom event. Skip so Top-symptom counts/averages stay honest.
+      if (s.severity === 0) continue;
       const e = symMap.get(s.category) ?? {
         category: s.category,
         count: 0,
@@ -562,6 +616,50 @@ export const restStreak = query({
 //   npx convex run sessions:dangerouslyWipeAll
 // Never expose this in production.
 // ───────────────────────────────────────────────────────────────────────────
+// DEV: purge every row for a single deviceId across all tables. Useful for
+// clearing test fixtures (e.g. the VERIFY-* devices used in integration runs)
+// without touching real data. Run via:
+//   npx convex run sessions:purgeDeviceData '{"deviceId":"VERIFY-strong"}'
+export const purgeDeviceData = internalMutation({
+  args: { deviceId: v.string() },
+  handler: async (ctx, args) => {
+    const counts = { sessions: 0, symptoms: 0, activities: 0, transcripts: 0, snapshots: 0, insights: 0 };
+    const sessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_device_started", (q) => q.eq("deviceId", args.deviceId))
+      .take(500);
+    for (const s of sessions) {
+      const msgs = await ctx.db
+        .query("transcriptMessages")
+        .withIndex("by_session", (q) => q.eq("sessionId", s._id))
+        .take(1000);
+      for (const m of msgs) {
+        await ctx.db.delete(m._id);
+        counts.transcripts++;
+      }
+      await ctx.db.delete(s._id);
+      counts.sessions++;
+    }
+    for (const s of await ctx.db.query("symptoms").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+      await ctx.db.delete(s._id);
+      counts.symptoms++;
+    }
+    for (const a of await ctx.db.query("activities").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+      await ctx.db.delete(a._id);
+      counts.activities++;
+    }
+    for (const h of await ctx.db.query("healthSnapshots").withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+      await ctx.db.delete(h._id);
+      counts.snapshots++;
+    }
+    for (const i of await ctx.db.query("insights").withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+      await ctx.db.delete(i._id);
+      counts.insights++;
+    }
+    return counts;
+  },
+});
+
 export const dangerouslyWipeAll = internalMutation({
   args: {},
   handler: async (ctx) => {

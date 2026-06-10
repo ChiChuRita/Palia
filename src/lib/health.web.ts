@@ -3,6 +3,7 @@ export type HealthSnapshot = {
   hrvBaselineMs: number | null;
   restingHrBpm: number | null;
   sleepHoursLastNight: number | null;
+  stepsToday: number | null;
   stepsYesterday: number | null;
 };
 
@@ -11,6 +12,7 @@ const EMPTY: HealthSnapshot = {
   hrvBaselineMs: null,
   restingHrBpm: null,
   sleepHoursLastNight: null,
+  stepsToday: null,
   stepsYesterday: null,
 };
 

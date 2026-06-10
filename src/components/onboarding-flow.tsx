@@ -6,11 +6,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
+import { TimeStepper } from "@/components/time-stepper";
+import { MaxContentWidth, Radius, Spacing } from "@/constants/theme";
 import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { type Locale, setLocale, useTranslation } from "@/i18n";
 import { requestHealthPermission } from "@/lib/health";
+import {
+  DEFAULT_REMINDER_HOUR,
+  DEFAULT_REMINDER_MINUTE,
+  enableReminder,
+} from "@/lib/reminders";
 
 // Triggers the iOS mic permission prompt and immediately stops the track.
 // We don't want to keep recording — just to get the system dialog out of the
@@ -40,12 +46,15 @@ async function requestMicPermission(): Promise<boolean> {
   }
 }
 
-type Step = "welcome" | "language" | "mic" | "health" | "done";
+type Step = "welcome" | "language" | "mic" | "health" | "reminder" | "done";
 
 export function OnboardingFlow({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>("welcome");
   const [requestingMic, setRequestingMic] = useState(false);
   const [requestingHealth, setRequestingHealth] = useState(false);
+  const [requestingReminder, setRequestingReminder] = useState(false);
+  const [remHour, setRemHour] = useState(DEFAULT_REMINDER_HOUR);
+  const [remMinute, setRemMinute] = useState(DEFAULT_REMINDER_MINUTE);
   const { t } = useTranslation();
   const theme = useTheme();
   const reduceMotion = useReduceMotion();
@@ -63,6 +72,15 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
     setRequestingHealth(true);
     await requestHealthPermission();
     setRequestingHealth(false);
+    setStep("reminder");
+  };
+
+  const onAllowReminder = async () => {
+    setRequestingReminder(true);
+    // Even if permission is denied, the chosen time is remembered so the user
+    // can flip it on later from Settings without re-picking.
+    await enableReminder(remHour, remMinute);
+    setRequestingReminder(false);
     onDone();
   };
 
@@ -125,6 +143,28 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
               </ThemedText>
             </Screen>
           ) : null}
+
+          {step === "reminder" ? (
+            <Screen reduceMotion={reduceMotion} key="reminder">
+              <ThemedText type="title" style={styles.title}>
+                {t("onboarding.reminderTitle")}
+              </ThemedText>
+              <ThemedText type="default" themeColor="textSecondary" style={styles.body_text}>
+                {t("onboarding.reminderBody")}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.reminderLabel}>
+                {t("onboarding.reminderEvery")}
+              </ThemedText>
+              <TimeStepper
+                hour={remHour}
+                minute={remMinute}
+                onChange={(h, m) => {
+                  setRemHour(h);
+                  setRemMinute(m);
+                }}
+              />
+            </Screen>
+          ) : null}
         </View>
 
         <View style={styles.footer}>
@@ -152,12 +192,30 @@ export function OnboardingFlow({ onDone }: { onDone: () => void }) {
             </View>
           ) : step === "health" ? (
             <View style={styles.row}>
-              <SecondaryButton label={t("onboarding.healthSkip")} onPress={onDone} theme={theme} />
+              <SecondaryButton
+                label={t("onboarding.healthSkip")}
+                onPress={() => setStep("reminder")}
+                theme={theme}
+              />
               <PrimaryButton
                 label={requestingHealth ? t("common.loading") : t("onboarding.healthGrant")}
                 onPress={onAllowHealth}
                 theme={theme}
                 disabled={requestingHealth}
+              />
+            </View>
+          ) : step === "reminder" ? (
+            <View style={styles.row}>
+              <SecondaryButton
+                label={t("onboarding.reminderSkip")}
+                onPress={onDone}
+                theme={theme}
+              />
+              <PrimaryButton
+                label={requestingReminder ? t("common.loading") : t("onboarding.reminderGrant")}
+                onPress={onAllowReminder}
+                theme={theme}
+                disabled={requestingReminder}
               />
             </View>
           ) : null}
@@ -274,11 +332,16 @@ const styles = StyleSheet.create({
   screen: { gap: Spacing.three, alignItems: "center" },
   title: { textAlign: "center" },
   body_text: { textAlign: "center", lineHeight: 26 },
+  reminderLabel: {
+    marginTop: Spacing.two,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
   choices: { gap: Spacing.two, alignSelf: "stretch", marginTop: Spacing.three },
   langChoice: {
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.four,
-    borderRadius: Spacing.three,
+    borderRadius: Radius.md,
     alignItems: "center",
     borderWidth: 2,
   },

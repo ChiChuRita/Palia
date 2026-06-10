@@ -1,4 +1,8 @@
 import {
+  CategoryValueSleepAnalysis,
+  getMostRecentQuantitySample,
+  queryCategorySamples,
+  queryQuantitySamples,
   requestAuthorization,
   type CategoryTypeIdentifier,
   type ObjectTypeIdentifier,
@@ -16,6 +20,9 @@ export type HealthSnapshot = {
   hrvBaselineMs: number | null;
   restingHrBpm: number | null;
   sleepHoursLastNight: number | null;
+  // Steps so far today (live, grows through the day) — for the Today chip.
+  stepsToday: number | null;
+  // Steps for the previous complete calendar day — the analyst's load signal.
   stepsYesterday: number | null;
 };
 
@@ -24,6 +31,7 @@ const EMPTY: HealthSnapshot = {
   hrvBaselineMs: null,
   restingHrBpm: null,
   sleepHoursLastNight: null,
+  stepsToday: null,
   stepsYesterday: null,
 };
 
@@ -75,28 +83,32 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
   if (!ok) return EMPTY;
 
   if (Platform.OS === "android") {
-    const [hrvMs, restingHrBpm, sleepHoursLastNight, stepsYesterday] = await Promise.all([
-      readAndroidHrvLatest(),
-      readAndroidRestingHrLatest(),
-      readAndroidSleepLastNight(),
-      readAndroidStepsYesterday(),
-    ]);
+    const [hrvMs, restingHrBpm, sleepHoursLastNight, stepsToday, stepsYesterday] =
+      await Promise.all([
+        readAndroidHrvLatest(),
+        readAndroidRestingHrLatest(),
+        readAndroidSleepLastNight(),
+        readAndroidStepsToday(),
+        readAndroidStepsYesterday(),
+      ]);
     return {
       hrvMs,
       hrvBaselineMs: null,
       restingHrBpm,
       sleepHoursLastNight,
+      stepsToday,
       stepsYesterday,
     };
   }
 
   if (Platform.OS === "ios") {
-    const [hrvMs, hrvBaselineMs, restingHrBpm, sleepHoursLastNight, stepsYesterday] =
+    const [hrvMs, hrvBaselineMs, restingHrBpm, sleepHoursLastNight, stepsToday, stepsYesterday] =
       await Promise.all([
         readHrvLatest(),
         readHrvBaseline7Day(),
         readRestingHrLatest(),
         readSleepHoursLastNight(),
+        readStepsToday(),
         readStepsYesterday(),
       ]);
     return {
@@ -104,6 +116,7 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
       hrvBaselineMs,
       restingHrBpm,
       sleepHoursLastNight,
+      stepsToday,
       stepsYesterday,
     };
   }
@@ -185,6 +198,26 @@ async function readAndroidSleepLastNight(): Promise<number | null> {
   }
 }
 
+async function readAndroidStepsToday(): Promise<number | null> {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const result = await readRecords("Steps", {
+      timeRangeFilter: {
+        operator: "between",
+        startTime: todayStart.toISOString(),
+        endTime: now.toISOString(),
+      },
+    });
+
+    return result.records.reduce((sum, record) => sum + record.count, 0) || null;
+  } catch {
+    return null;
+  }
+}
+
 async function readAndroidStepsYesterday(): Promise<number | null> {
   try {
     const now = new Date();
@@ -209,20 +242,127 @@ async function readAndroidStepsYesterday(): Promise<number | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// iOS Readers (Keep your existing functions below this point)
+// iOS Readers — Apple HealthKit via @kingstinct/react-native-healthkit
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Latest overnight HRV (SDNN), in milliseconds.
 async function readHrvLatest(): Promise<number | null> {
-  /* ... your existing code ... */ return null;
+  try {
+    const sample = await getMostRecentQuantitySample(
+      "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+      "ms"
+    );
+    return sample ? Math.round(sample.quantity) : null;
+  } catch {
+    return null;
+  }
 }
+
+// 7-day rolling average of HRV (SDNN), in milliseconds. The agent + analyst use
+// this as the personal baseline to detect autonomic strain (HRV ↓ vs baseline).
 async function readHrvBaseline7Day(): Promise<number | null> {
-  /* ... your existing code ... */ return null;
+  try {
+    const samples = await queryQuantitySamples(
+      "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+      {
+        unit: "ms",
+        filter: { date: { startDate: new Date(Date.now() - 7 * DAY_MS), endDate: new Date() } },
+        limit: 0, // all samples in range
+      }
+    );
+    if (samples.length === 0) return null;
+    const avg = samples.reduce((sum, s) => sum + s.quantity, 0) / samples.length;
+    return Math.round(avg);
+  } catch {
+    return null;
+  }
 }
+
+// Latest resting heart rate, in beats per minute.
 async function readRestingHrLatest(): Promise<number | null> {
-  /* ... your existing code ... */ return null;
+  try {
+    const sample = await getMostRecentQuantitySample(
+      "HKQuantityTypeIdentifierRestingHeartRate",
+      "count/min"
+    );
+    return sample ? Math.round(sample.quantity) : null;
+  } catch {
+    return null;
+  }
 }
+
+// Hours actually asleep last night (excludes in-bed-but-awake), summed across
+// sleep samples in the yesterday-6pm → today-noon window.
 async function readSleepHoursLastNight(): Promise<number | null> {
-  /* ... your existing code ... */ return null;
+  try {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - 1);
+    start.setHours(18, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(12, 0, 0, 0);
+
+    const samples = await queryCategorySamples("HKCategoryTypeIdentifierSleepAnalysis", {
+      filter: { date: { startDate: start, endDate: end } },
+      limit: 0,
+    });
+
+    const ASLEEP = new Set<number>([
+      CategoryValueSleepAnalysis.asleep, // == asleepUnspecified (1)
+      CategoryValueSleepAnalysis.asleepCore,
+      CategoryValueSleepAnalysis.asleepDeep,
+      CategoryValueSleepAnalysis.asleepREM,
+    ]);
+
+    let totalMs = 0;
+    for (const s of samples) {
+      if (!ASLEEP.has(s.value as number)) continue;
+      totalMs += s.endDate.getTime() - s.startDate.getTime();
+    }
+    const hours = totalMs / (1000 * 60 * 60);
+    return hours > 0.25 ? Math.round(hours * 10) / 10 : null;
+  } catch {
+    return null;
+  }
 }
+
+// Step count so far for the current local day (midnight → now). Grows through
+// the day, so it reflects what the user has actually walked when they look.
+async function readStepsToday(): Promise<number | null> {
+  try {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+
+    const samples = await queryQuantitySamples("HKQuantityTypeIdentifierStepCount", {
+      unit: "count",
+      filter: { date: { startDate: start, endDate: end } },
+      limit: 0,
+    });
+    const total = samples.reduce((sum, s) => sum + s.quantity, 0);
+    return total > 0 ? Math.round(total) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Total step count for the previous local calendar day.
 async function readStepsYesterday(): Promise<number | null> {
-  /* ... your existing code ... */ return null;
+  try {
+    const start = new Date();
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+
+    const samples = await queryQuantitySamples("HKQuantityTypeIdentifierStepCount", {
+      unit: "count",
+      filter: { date: { startDate: start, endDate: end } },
+      limit: 0,
+    });
+    const total = samples.reduce((sum, s) => sum + s.quantity, 0);
+    return total > 0 ? Math.round(total) : null;
+  } catch {
+    return null;
+  }
 }

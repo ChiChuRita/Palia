@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -19,6 +19,11 @@ import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { useTranslation } from "@/i18n";
+import { BOTS, DEFAULT_BOT, type BotId } from "@/lib/bots";
+
+// Dev-only: show the 5-voice Bot Lab picker. Off for the demo build — the
+// check-in just uses DEFAULT_BOT (Marin). Flip to true to A/B voices again.
+const SHOW_BOT_LAB = false;
 
 function borderForState(state: string, fallback: string): string {
   switch (state) {
@@ -42,8 +47,11 @@ export function VoiceCheckIn() {
   const { t } = useTranslation();
   const { state, error, start, end, agentLevel } = useVoiceSession();
 
+  const [bot, setBot] = useState<BotId>(DEFAULT_BOT);
+
   const active = state !== "idle" && state !== "error";
   const buttonLabel = active ? t("common.end") : t("common.start");
+  const selectedBot = BOTS.find((b) => b.id === bot) ?? BOTS[0];
 
   // ---- Animations ----
   //
@@ -127,6 +135,49 @@ export function VoiceCheckIn() {
         <TodaySummary />
 
         <View style={styles.center}>
+          {SHOW_BOT_LAB && !active ? (
+            <View style={styles.picker}>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.pickerTitle}>
+                Bot Lab — pick a voice
+              </ThemedText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pickerRow}
+              >
+                {BOTS.map((b) => {
+                  const selected = b.id === bot;
+                  return (
+                    <Pressable
+                      key={b.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`${b.name}, ${b.blurb}`}
+                      onPress={() => setBot(b.id)}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: selected
+                            ? theme.backgroundSelected
+                            : theme.backgroundElement,
+                          borderColor: selected ? "#3ba76e" : theme.backgroundSelected,
+                          borderWidth: selected ? 2 : 1,
+                        },
+                      ]}
+                    >
+                      <ThemedText type="smallBold" style={styles.chipName}>
+                        {b.name}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary" style={styles.chipBlurb}>
+                        {b.blurb}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
+
           <View style={styles.orbWrapper}>
             <Animated.View
               pointerEvents="none"
@@ -142,7 +193,7 @@ export function VoiceCheckIn() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={buttonLabel}
-                onPress={() => (active ? end() : start())}
+                onPress={() => (active ? end() : start(bot))}
                 style={({ pressed }) => [
                   styles.orb,
                   {
@@ -164,6 +215,12 @@ export function VoiceCheckIn() {
           <ThemedText themeColor="textSecondary" style={styles.stateLabel}>
             {t(`voice.${state}`)}
           </ThemedText>
+
+          {SHOW_BOT_LAB ? (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.stateLabel}>
+              {selectedBot.name} · {selectedBot.blurb}
+            </ThemedText>
+          ) : null}
 
           {error ? (
             <ThemedText type="small" style={styles.error}>
@@ -219,6 +276,19 @@ const styles = StyleSheet.create({
   },
   orbLabel: { fontWeight: 500 },
   stateLabel: { textAlign: "center" },
+  picker: { width: "100%", gap: Spacing.two },
+  pickerTitle: { textAlign: "center" },
+  pickerRow: { gap: Spacing.two, paddingHorizontal: Spacing.two },
+  chip: {
+    minWidth: 96,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 14,
+    alignItems: "center",
+    gap: 2,
+  },
+  chipName: { textAlign: "center" },
+  chipBlurb: { textAlign: "center" },
   error: { color: "#c44", textAlign: "center" },
   footer: { alignItems: "center", paddingBottom: Spacing.two },
 });

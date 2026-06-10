@@ -61,5 +61,19 @@ export const Spacing = {
   six: 64,
 } as const;
 
+/**
+ * One corner-radius scale for the whole app so surfaces feel uniform.
+ *   sm   — small inset surfaces (disclaimers, inline notes)
+ *   md   — interactive elements (buttons, rows, choices, steppers)
+ *   lg   — content cards / panels
+ *   pill — fully rounded chips and circular controls
+ */
+export const Radius = {
+  sm: 12,
+  md: 16,
+  lg: 20,
+  pill: 999,
+} as const;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

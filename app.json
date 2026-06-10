@@ -76,7 +76,8 @@
             "minSdkVersion": 33
           }
         }
-      ]
+      ],
+      "./plugins/without-push-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -29,6 +29,14 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="insights">
+        <NativeTabs.Trigger.Label>{t("insights.tab")}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: "sparkles", selected: "sparkles" }}
+          md={{ default: "auto_awesome", selected: "auto_awesome" }}
+        />
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="explore">
         <NativeTabs.Trigger.Label>{t("history.title")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon

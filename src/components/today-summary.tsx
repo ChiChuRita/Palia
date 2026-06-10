@@ -1,9 +1,8 @@
-import { useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
-  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -11,12 +10,14 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 
+import { InsightCard } from "@/components/insight-card";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslation } from "@/i18n";
-import { DAY_MS, startOfLocalDay } from "@/lib/dates";
+import { DAY_MS, localDateKey, startOfLocalDay } from "@/lib/dates";
+import { isDemoMode } from "@/lib/demo-mode";
 import { useDeviceId } from "@/lib/device-id";
 import { readHealthSnapshot, type HealthSnapshot } from "@/lib/health";
 
@@ -31,22 +32,6 @@ const SCORE_COLORS = [
   "#5a8a5e", // 5 — quiet
 ] as const;
 
-const LEAF_STAGES = [
-  { min: 1, glyph: "🌱", label: "starting" },
-  { min: 3, glyph: "🌿", label: "taking root" },
-  { min: 7, glyph: "🍃", label: "growing" },
-  { min: 14, glyph: "🌳", label: "steady" },
-] as const;
-
-function leafFor(streak: number): { glyph: string; label: string } | null {
-  if (streak < 1) return null;
-  let chosen: (typeof LEAF_STAGES)[number] = LEAF_STAGES[0];
-  for (const stage of LEAF_STAGES) {
-    if (streak >= stage.min) chosen = stage;
-  }
-  return chosen;
-}
-
 export function TodaySummary() {
   const deviceId = useDeviceId();
   const reduceMotion = useReduceMotion();
@@ -54,8 +39,9 @@ export function TodaySummary() {
   const [now] = useState(() => Date.now());
   const dayStart = useMemo(() => startOfLocalDay(now), [now]);
   const dayEnd = dayStart + DAY_MS;
-  // HealthKit snapshot — read once on mount. Renders nothing if permission
-  // wasn't granted or no data is available, so the UI gracefully degrades.
+  // HealthKit snapshot — read once on mount. Not rendered anywhere on this
+  // screen (the home screen stays silent on biomarkers; the Insights tab
+  // interprets them) — it exists solely to feed the Stage-2 analyst below.
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
   useEffect(() => {
     let mounted = true;
@@ -71,19 +57,42 @@ export function TodaySummary() {
     };
   }, []);
 
+  // Persist today's passive-health snapshot to Convex once both the device id
+  // and the HealthKit read are ready. This is what the Stage-2 analyst reads.
+  // Skipped while demo mode is on — the real read would overwrite the seeded
+  // scenario snapshot.
+  const upsertSnapshot = useMutation(api.health.upsertSnapshot);
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (syncedRef.current || !deviceId || !health) return;
+    let cancelled = false;
+    isDemoMode().then((demo) => {
+      if (cancelled || demo || syncedRef.current) return;
+      syncedRef.current = true;
+      upsertSnapshot({
+        deviceId,
+        dateKey: localDateKey(Date.now()),
+        hrvMs: health.hrvMs,
+        hrvBaselineMs: health.hrvBaselineMs,
+        restingHrBpm: health.restingHrBpm,
+        sleepHours: health.sleepHoursLastNight,
+        steps: health.stepsYesterday,
+      }).catch(() => {
+        syncedRef.current = false; // allow a retry on next render
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, health, upsertSnapshot]);
+
   const snapshot = useQuery(
     api.sessions.todaySnapshot,
     deviceId ? { deviceId, dayStart, dayEnd } : "skip"
   );
-  const streak = useQuery(
-    api.sessions.restStreak,
-    deviceId ? { deviceId, nowMs: now, dayLengthMs: DAY_MS } : "skip"
-  );
 
   const today = snapshot?.today ?? null;
-  const yesterday = snapshot?.yesterday ?? null;
   const scoreToday = today?.energyScore ?? null;
-  const scoreYesterday = yesterday?.energyScore ?? null;
   const sleepHoursToday = today?.sleepHours ?? null;
   const pemToday = today?.hadPEMToday === true;
 
@@ -103,10 +112,7 @@ export function TodaySummary() {
         {today?.summary ? `"${today.summary}"` : scoreToday == null ? t("today.noCheckIn") : "—"}
       </ThemedText>
 
-      {pemToday ||
-      sleepHoursToday != null ||
-      health?.hrvMs != null ||
-      health?.stepsYesterday != null ? (
+      {pemToday || sleepHoursToday != null ? (
         <View style={styles.contextRow}>
           {pemToday ? <ContextChip text={t("today.pemToday")} emphasized /> : null}
           {sleepHoursToday != null ? (
@@ -116,32 +122,12 @@ export function TodaySummary() {
               })}
             />
           ) : null}
-          {health?.hrvMs != null ? (
-            <ContextChip text={t("today.hrv", { value: health.hrvMs.toString() })} />
-          ) : null}
-          {health?.stepsYesterday != null ? (
-            <ContextChip
-              text={t("today.steps", {
-                value:
-                  health.stepsYesterday >= 1000
-                    ? `${(health.stepsYesterday / 1000).toFixed(1)}k`
-                    : health.stepsYesterday.toString(),
-              })}
-            />
-          ) : null}
         </View>
       ) : null}
 
-      {scoreYesterday != null ? (
-        <View style={styles.yesterdayRow}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {t("today.yesterday")}
-          </ThemedText>
-          <ScoreDots score={scoreYesterday} reduceMotion={reduceMotion} size="small" />
-        </View>
-      ) : null}
-
-      <RestStreak streak={streak ?? null} reduceMotion={reduceMotion} t={t} />
+      <View style={styles.insightSlot}>
+        <InsightCard compact />
+      </View>
     </View>
   );
 }
@@ -251,44 +237,9 @@ function AnimatedDot({
   );
 }
 
-function RestStreak({
-  streak,
-  reduceMotion,
-  t,
-}: {
-  streak: number | null;
-  reduceMotion: boolean;
-  t: (key: string, opts?: Record<string, unknown>) => string;
-}) {
-  const leaf = streak != null ? leafFor(streak) : null;
-  if (!leaf || streak == null || streak === 0) {
-    return null;
-  }
-
-  const label =
-    streak === 1
-      ? t("today.daysRestingOne", { count: streak })
-      : t("today.daysRestingOther", { count: streak });
-
-  return (
-    <Animated.View
-      entering={reduceMotion ? undefined : FadeIn.duration(700)}
-      style={styles.streakRow}
-    >
-      <ThemedText style={styles.streakGlyph}>{leaf.glyph}</ThemedText>
-      <View>
-        <ThemedText type="smallBold">{label}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {t("today.withinEnvelope")}
-        </ThemedText>
-      </View>
-    </Animated.View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
-    gap: Spacing.two,
+    gap: Spacing.three,
     alignItems: "center",
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
@@ -304,29 +255,16 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     paddingHorizontal: Spacing.three,
   },
-  yesterdayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.two,
-    marginTop: Spacing.one,
-  },
   contextRow: {
     flexDirection: "row",
     gap: Spacing.two,
     flexWrap: "wrap",
     justifyContent: "center",
-    marginTop: Spacing.one,
   },
   chip: {
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
     borderRadius: 999,
   },
-  streakRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.two,
-    marginTop: Spacing.three,
-  },
-  streakGlyph: { fontSize: 28 },
+  insightSlot: { width: "100%" },
 });

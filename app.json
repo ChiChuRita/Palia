@@ -7,7 +7,7 @@
       "policy": "fingerprint"
     },
     "updates": {
-      "url": "https://u.expo.dev/EAS_PROJECT_ID_PLACEHOLDER",
+      "url": "https://u.expo.dev/60e10419-e918-4b48-8372-75356ec5e960",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0,
@@ -94,6 +94,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "60e10419-e918-4b48-8372-75356ec5e960"
+      }
+    },
+    "owner": "chichurita"
   }
 }

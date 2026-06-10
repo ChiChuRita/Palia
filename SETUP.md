@@ -132,7 +132,7 @@ eas env:create --environment production --name EXPO_PUBLIC_CONVEX_URL \
 # EXPO_TOKEN (expo.dev → Account settings → Access tokens)
 
 # Reference fingerprint (with clean tree, no ios/ dir — CI guards OTA against drift):
-npx @expo/fingerprint . > stable-runtime-fingerprint.json && git add … && git commit
+npx @expo/fingerprint . | jq '{hash: .hash}' > stable-runtime-fingerprint.json && git add … && git commit
 ```
 
 ### The phone install (repeat when natives change or free signing expires)
@@ -149,7 +149,7 @@ The Release build replaces the dev client (same bundle id); rebuild the dev clie
 
 If CI's `publish-update` job fails with a **fingerprint mismatch**, a native-affecting
 change landed (new pod, plugin, SDK bump): rebuild + reinstall on the device, then
-`npx @expo/fingerprint . > stable-runtime-fingerprint.json` and commit.
+`npx @expo/fingerprint . | jq '{hash: .hash}' > stable-runtime-fingerprint.json` and commit.
 
 ## Troubleshooting
 

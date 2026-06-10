@@ -262,14 +262,11 @@ async function readHrvLatest(): Promise<number | null> {
 // this as the personal baseline to detect autonomic strain (HRV ↓ vs baseline).
 async function readHrvBaseline7Day(): Promise<number | null> {
   try {
-    const samples = await queryQuantitySamples(
-      "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-      {
-        unit: "ms",
-        filter: { date: { startDate: new Date(Date.now() - 7 * DAY_MS), endDate: new Date() } },
-        limit: 0, // all samples in range
-      }
-    );
+    const samples = await queryQuantitySamples("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", {
+      unit: "ms",
+      filter: { date: { startDate: new Date(Date.now() - 7 * DAY_MS), endDate: new Date() } },
+      limit: 0, // all samples in range
+    });
     if (samples.length === 0) return null;
     const avg = samples.reduce((sum, s) => sum + s.quantity, 0) / samples.length;
     return Math.round(avg);

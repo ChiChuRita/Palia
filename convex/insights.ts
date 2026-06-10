@@ -145,9 +145,7 @@ export async function markInsightAnalyzing(
 ): Promise<void> {
   const existing = await ctx.db
     .query("insights")
-    .withIndex("by_device_date", (q) =>
-      q.eq("deviceId", deviceId).eq("dateKey", dateKey)
-    )
+    .withIndex("by_device_date", (q) => q.eq("deviceId", deviceId).eq("dateKey", dateKey))
     .first();
   if (existing) {
     await ctx.db.patch(existing._id, { status: "analyzing" });
@@ -456,16 +454,13 @@ async function runAnalysisCore(
     deviceId,
     sinceMs: Date.now() - 8 * DAY_MS,
   });
-  const dateKey =
-    explicitDateKey ?? data.snapshots[0]?.dateKey ?? utcDateKey(Date.now());
+  const dateKey = explicitDateKey ?? data.snapshots[0]?.dateKey ?? utcDateKey(Date.now());
   const today = (data.snapshots.find((s: Snapshot) => s.dateKey === dateKey) ??
     data.snapshots[0] ??
     null) as Snapshot | null;
 
   const latestSession = data.sessions[0] ?? null;
-  const unrefreshingSleep = data.symptoms.some(
-    (s) => s.category === "unrefreshing_sleep"
-  );
+  const unrefreshingSleep = data.symptoms.some((s) => s.category === "unrefreshing_sleep");
   const signal = computePemSignal(today, {
     hadPEMToday: latestSession?.hadPEMToday === true,
     unrefreshingSleep,

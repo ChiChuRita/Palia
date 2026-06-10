@@ -12,11 +12,7 @@ import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { type Locale, setLocale, useTranslation } from "@/i18n";
 import { requestHealthPermission } from "@/lib/health";
-import {
-  DEFAULT_REMINDER_HOUR,
-  DEFAULT_REMINDER_MINUTE,
-  enableReminder,
-} from "@/lib/reminders";
+import { DEFAULT_REMINDER_HOUR, DEFAULT_REMINDER_MINUTE, enableReminder } from "@/lib/reminders";
 
 // Triggers the iOS mic permission prompt and immediately stops the track.
 // We don't want to keep recording — just to get the system dialog out of the

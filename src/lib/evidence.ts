@@ -125,9 +125,7 @@ export const EVIDENCE: EvidenceEntry[] = [
   },
 ];
 
-const BY_TAG: Record<string, EvidenceEntry> = Object.fromEntries(
-  EVIDENCE.map((e) => [e.tag, e])
-);
+const BY_TAG: Record<string, EvidenceEntry> = Object.fromEntries(EVIDENCE.map((e) => [e.tag, e]));
 
 /**
  * Split the evidence list into the entries relevant to this insight (pinned,

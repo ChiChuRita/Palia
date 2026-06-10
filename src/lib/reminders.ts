@@ -56,7 +56,7 @@ export function stepTime(
   minute: number,
   deltaMin: number
 ): { hour: number; minute: number } {
-  const total = ((hour * 60 + minute + deltaMin) % 1440 + 1440) % 1440;
+  const total = (((hour * 60 + minute + deltaMin) % 1440) + 1440) % 1440;
   return { hour: Math.floor(total / 60), minute: total % 60 };
 }
 

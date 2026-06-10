@@ -623,7 +623,14 @@ export const restStreak = query({
 export const purgeDeviceData = internalMutation({
   args: { deviceId: v.string() },
   handler: async (ctx, args) => {
-    const counts = { sessions: 0, symptoms: 0, activities: 0, transcripts: 0, snapshots: 0, insights: 0 };
+    const counts = {
+      sessions: 0,
+      symptoms: 0,
+      activities: 0,
+      transcripts: 0,
+      snapshots: 0,
+      insights: 0,
+    };
     const sessions = await ctx.db
       .query("sessions")
       .withIndex("by_device_started", (q) => q.eq("deviceId", args.deviceId))
@@ -640,19 +647,31 @@ export const purgeDeviceData = internalMutation({
       await ctx.db.delete(s._id);
       counts.sessions++;
     }
-    for (const s of await ctx.db.query("symptoms").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+    for (const s of await ctx.db
+      .query("symptoms")
+      .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
+      .take(1000)) {
       await ctx.db.delete(s._id);
       counts.symptoms++;
     }
-    for (const a of await ctx.db.query("activities").withIndex("by_device", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+    for (const a of await ctx.db
+      .query("activities")
+      .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
+      .take(1000)) {
       await ctx.db.delete(a._id);
       counts.activities++;
     }
-    for (const h of await ctx.db.query("healthSnapshots").withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+    for (const h of await ctx.db
+      .query("healthSnapshots")
+      .withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId))
+      .take(1000)) {
       await ctx.db.delete(h._id);
       counts.snapshots++;
     }
-    for (const i of await ctx.db.query("insights").withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId)).take(1000)) {
+    for (const i of await ctx.db
+      .query("insights")
+      .withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId))
+      .take(1000)) {
       await ctx.db.delete(i._id);
       counts.insights++;
     }

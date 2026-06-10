@@ -92,21 +92,64 @@ Once `.env` is filled in, the worker launches as part of the root `npm run dev` 
 5. Tap **End** or let the agent close naturally.
 6. Open the Convex dashboard → tables `sessions`, `transcriptMessages`, `symptoms`, `activities`. You should see new rows.
 
-## 7. Deploy the agent to LiveKit Cloud
+## 7. Production — the `stable` branch pipeline
+
+Merging into `stable` deploys everything automatically (`.github/workflows/deploy-stable.yml`):
+
+1. **Convex functions → production deployment** (`successful-raven-990`, separate DB from dev)
+2. **Voice agent → LiveKit Cloud** (only when `agent/` changed)
+3. **App JS bundle → EAS Update** on the `stable` channel — the installed Release build
+   picks it up over the air on the next two launches (fetch on first, apply on second)
+
+Dev and prod never interfere:
+
+- Dev keeps `dev:tidy-blackbird-755` + your local `tsx watch` agent (automatic dispatch).
+- The cloud agent registers under the **dispatch name `mecfs-interviewer`** (its
+  `AGENT_NAME` secret), which excludes it from automatic dispatch. Only the prod Convex
+  deployment (env var `AGENT_NAME`) explicitly dispatches it via the token's room config
+  (`convex/livekit.ts`). The cloud agent can never take a dev call, and vice versa.
+
+### One-time setup (already done, recorded for posterity)
 
 ```sh
-cd agent
-# Create the agent record on LiveKit Cloud (first time only).
-# Pass the same secrets your local .env has.
-lk agent create --secrets-file .env
+npx convex deploy -y                          # creates the prod deployment
+npx convex env set --prod LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET <…>
+npx convex env set --prod AGENT_SHARED_SECRET "$(openssl rand -hex 32)"   # prod-only value
+npx convex env set --prod OPENAI_API_KEY <…>  # gpt-5.5 insights analyst
+npx convex env set --prod AGENT_NAME mecfs-interviewer
 
-# Subsequent deploys just push a new image:
-lk agent deploy
+# agent/.env.prod.local (gitignored): OPENAI_API_KEY, AGENT_SHARED_SECRET (prod value),
+# AGENT_NAME=mecfs-interviewer, CONVEX_HTTP_URL=https://successful-raven-990.eu-west-1.convex.site
+cd agent && lk agent create --region eu-central --secrets-file .env.prod.local .
+# → commit the agent id it writes into agent/livekit.toml
+
+npx eas-cli login && eas init                 # writes projectId into app.json → fill updates.url
+eas env:create --environment production --name EXPO_PUBLIC_CONVEX_URL \
+  --value https://successful-raven-990.eu-west-1.convex.cloud --visibility plaintext --scope project
+
+# GitHub Actions secrets: LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET (set),
+# CONVEX_DEPLOY_KEY (Convex dashboard → prod → Settings → Deploy key),
+# EXPO_TOKEN (expo.dev → Account settings → Access tokens)
+
+# Reference fingerprint (with clean tree, no ios/ dir — CI guards OTA against drift):
+npx @expo/fingerprint . > stable-runtime-fingerprint.json && git add … && git commit
 ```
 
-LiveKit Cloud auto-injects `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` for the deployed agent — you do NOT need to set those, but `OPENAI_API_KEY`, `CONVEX_HTTP_URL`, and `AGENT_SHARED_SECRET` must be in `--secrets-file` or `--secrets`.
+### The phone install (repeat when natives change or free signing expires)
 
-After deploy, stop your local `npm run dev`. Test the loop again from the app — dispatch now goes to the cloud-hosted agent automatically. Tail logs with `lk agent logs`.
+```sh
+# .env.production.local (gitignored): EXPO_PUBLIC_CONVEX_URL=https://successful-raven-990.eu-west-1.convex.cloud
+npx expo prebuild --platform ios --clean
+npx expo run:ios --configuration Release --device
+```
+
+Free personal-team signing expires after **7 days** — rerun the install when it does.
+The Release build replaces the dev client (same bundle id); rebuild the dev client with
+`npm run ios:rebuild` when you go back to development.
+
+If CI's `publish-update` job fails with a **fingerprint mismatch**, a native-affecting
+change landed (new pod, plugin, SDK bump): rebuild + reinstall on the device, then
+`npx @expo/fingerprint . > stable-runtime-fingerprint.json` and commit.
 
 ## Troubleshooting
 

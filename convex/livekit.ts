@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomAgentDispatch, RoomConfiguration } from "livekit-server-sdk";
 import { api, internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -72,6 +72,18 @@ export const mintToken = action({
       canSubscribe: true,
       canPublishData: true,
     });
+
+    // PROD ONLY: explicitly dispatch the named cloud agent into this room.
+    // The prod Convex deployment sets AGENT_NAME; dev deployments leave it
+    // unset, so dev rooms fall back to automatic dispatch and the local
+    // `tsx watch` worker picks them up. Named cloud agents are excluded from
+    // automatic dispatch, so they can never steal dev rooms.
+    const agentName = process.env.AGENT_NAME;
+    if (agentName) {
+      at.roomConfig = new RoomConfiguration({
+        agents: [new RoomAgentDispatch({ agentName })],
+      });
+    }
 
     const token = await at.toJwt();
     return { token, url, sessionId };

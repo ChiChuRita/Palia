@@ -2,7 +2,4 @@
   subdomain = "mecfs-ge1639t4"
 
 [agent]
-  # Deleted from LiveKit Cloud for now (the first deploy shipped without CA
-  # certs and stole dev calls). Re-create with: lk agent create --region
-  # eu-central --secrets-file <secrets> .  — the Dockerfile fix is in place.
-  name = "mecfs-interviewer"
+  id = "CA_JToNfqdGbihi"

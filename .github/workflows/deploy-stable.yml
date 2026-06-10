@@ -1,0 +1,103 @@
+name: Deploy stable
+
+# Merging into `stable` deploys everything:
+#   1. Convex functions → production deployment   (CONVEX_DEPLOY_KEY)
+#   2. Voice agent      → LiveKit Cloud           (LIVEKIT_* secrets; only when agent/ changed)
+#   3. App JS bundle    → EAS Update "stable" channel (EXPO_TOKEN)
+# The installed Release build on the phone picks up #3 over the air on relaunch.
+
+on:
+  push:
+    branches: [stable]
+
+concurrency:
+  group: deploy-stable
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Type check agent
+        run: npm --prefix agent ci && npm --prefix agent run build -- --noEmit
+
+  deploy-convex:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Deploy Convex functions to production
+        run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+  deploy-agent:
+    needs: deploy-convex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Did agent/ change?
+        id: agent-diff
+        run: |
+          BEFORE='${{ github.event.before }}'
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            # New branch or force push: no usable base, deploy to be safe.
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE" "${{ github.sha }}" -- agent/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install LiveKit CLI
+        if: steps.agent-diff.outputs.changed == 'true'
+        run: curl -sSL https://get.livekit.io/cli | bash
+      - name: Deploy agent to LiveKit Cloud
+        if: steps.agent-diff.outputs.changed == 'true'
+        working-directory: agent
+        env:
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        run: lk agent deploy
+
+  publish-update:
+    needs: deploy-convex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Guard — fingerprint must match the installed build
+        run: |
+          HASH=$(npx @expo/fingerprint . | jq -r '.hash')
+          EXPECTED=$(jq -r '.hash' stable-runtime-fingerprint.json)
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Native fingerprint changed: $HASH != installed $EXPECTED."
+            echo "::error::This OTA would target a runtime no installed build has. Rebuild + reinstall the app (npx expo run:ios --configuration Release --device), then regenerate stable-runtime-fingerprint.json (see SETUP.md)."
+            exit 1
+          fi
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Publish OTA update
+        run: eas update --channel stable --environment production --auto --non-interactive

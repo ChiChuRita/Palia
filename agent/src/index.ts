@@ -249,9 +249,7 @@ export default defineAgent({
             const timer = setInterval(() => {
               if (agentActivity.state === "speaking") sawSpeech = true;
               const elapsed = Date.now() - t0;
-              const playoutDone = sawSpeech
-                ? agentActivity.state !== "speaking"
-                : elapsed > 6000; // model never spoke a goodbye — bail
+              const playoutDone = sawSpeech ? agentActivity.state !== "speaking" : elapsed > 6000; // model never spoke a goodbye — bail
               if (playoutDone || elapsed > 15000) {
                 clearInterval(timer);
                 // Small tail buffer: agent-side "stopped speaking" runs a
@@ -351,4 +349,15 @@ export default defineAgent({
   },
 });
 
-cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url) }));
+cli.runApp(
+  new ServerOptions({
+    agent: fileURLToPath(import.meta.url),
+    // AGENT_NAME is set ONLY in LiveKit Cloud agent secrets. A named worker
+    // is excluded from automatic dispatch — prod rooms request it explicitly
+    // via the token's roomConfig (see convex/livekit.ts). Locally this is
+    // unset, so the dev worker registers unnamed and keeps receiving
+    // automatic dispatch for dev rooms. This is what stops a deployed cloud
+    // agent from stealing dev calls.
+    agentName: process.env.AGENT_NAME,
+  })
+);

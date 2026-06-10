@@ -1,0 +1,7 @@
+# Native dirs are PREBUILD OUTPUT in this CNG project (gitignored), but
+# @expo/fingerprint hashes them when they exist on disk. Locally ios/ exists
+# after prebuild; in CI it doesn't — without this ignore, the runtime version
+# embedded in the device build would never match the one computed at
+# `eas update` time, and OTA updates would silently never apply.
+ios/**
+android/**

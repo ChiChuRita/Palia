@@ -24,8 +24,9 @@ for brain-fog days when tapping through a form is too much.
 ```
 Expo iOS app  ──WebRTC──>  LiveKit Cloud  <──joins──  Agent worker (Node.js)
    │                                                      │
-   └── Convex action mints LiveKit JWT                    └── OpenAI gpt-realtime-2
-       (carries locale + health snapshot)                     voice interviewer
+   └── Convex action mints LiveKit JWT                    └── STT→LLM→TTS pipeline
+       (carries locale + health snapshot)                     (gpt-4o-transcribe ·
+                                                              gpt-5.4-mini · marin TTS)
                                                               │
                           Convex backend  <──HTTPS (shared secret)──┘
                           sessions · transcripts · symptoms · activities
@@ -35,20 +36,22 @@ Expo iOS app  ──WebRTC──>  LiveKit Cloud  <──joins──  Agent work
   `@kingstinct/react-native-healthkit`.
 - **Backend** — [Convex](https://convex.dev) (schema, mutations, queries, HTTP
   endpoint for agent writebacks, JWT minting).
-- **Voice agent** — `@livekit/agents` + OpenAI Realtime, deployed to LiveKit Cloud.
-  Lives in [`agent/`](./agent) as a separate Node project.
+- **Voice agent** — `@livekit/agents` multi-agent workflow (greeter → interview
+  boxes as bounded tasks → crisis handoff), STT→LLM→TTS pipeline on OpenAI models,
+  deployed to LiveKit Cloud. Lives in [`agent/`](./agent) as a separate Node project.
 
 HealthKit data is read **on-demand** on the device and attached to the LiveKit token
 metadata — no cron, no background fetch, no health data stored server-side.
 
 ## Project layout
 
-| Path           | What                                                        |
-| -------------- | ----------------------------------------------------------- |
-| `src/`         | Expo app — screens, components, hooks, i18n                 |
-| `convex/`      | Convex backend functions and schema                         |
-| `agent/`       | LiveKit voice agent worker (Node.js)                        |
-| `HEALTHKIT.md` | HealthKit field tier mapping (voice vs. passive vs. hybrid) |
+| Path            | What                                                                    |
+| --------------- | ----------------------------------------------------------------------- |
+| `src/`          | Expo app — screens, components, hooks, i18n                             |
+| `convex/`       | Convex backend functions and schema                                     |
+| `agent/`        | LiveKit voice agent worker (Node.js)                                    |
+| `HEALTHKIT.md`  | HealthKit field tier mapping (voice vs. passive vs. hybrid)             |
+| `LITERATURE.md` | Research the pacing read is grounded in (mirrors `src/lib/evidence.ts`) |
 
 ## Getting started
 
@@ -68,7 +71,7 @@ see [`SETUP.md`](./SETUP.md).
   - **[Convex](https://convex.dev)** — backend (free tier is fine)
   - **[LiveKit Cloud](https://cloud.livekit.io)** — WebRTC transport + agent hosting
     (create a project in an **EU/Frankfurt** region)
-  - **[OpenAI](https://platform.openai.com)** — Realtime voice model (`gpt-realtime-2`)
+  - **[OpenAI](https://platform.openai.com)** — STT, LLM, and TTS (`gpt-4o-transcribe`, `gpt-5.4-mini`, `gpt-4o-mini-tts`)
 
 ### 1. Install dependencies
 

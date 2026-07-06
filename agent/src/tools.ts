@@ -126,6 +126,92 @@ export async function finalize(
   await postEvent({ type: "finalize", sessionId, ...args });
 }
 
+// ── Summary generation (deterministic, not model-volunteered) ───────────────
+//
+// The old agent let the realtime voice model write the summary during its
+// goodbye turn — unreliable. Now the runner calls gpt-5.5 (same model as the
+// backend analyst) over the transcript, with a templated fallback so finalize
+// always has something to POST.
+
+export type SessionSummary = { summary: string; energyScore: number; flags?: string[] };
+
+export async function generateSummary(
+  transcript: string,
+  recorded: { symptoms: string[]; activities: string[] },
+  locale: string,
+  statedEnergy?: number
+): Promise<SessionSummary> {
+  const apiKey = requireEnv("OPENAI_API_KEY");
+  const de = locale === "de";
+
+  const delays = [0, 250, 1000];
+  let lastError: unknown = null;
+  for (const delay of delays) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: "gpt-5.5",
+          reasoning_effort: "low",
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "checkin_summary",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  summary: { type: "string" },
+                  energy_score: { type: "integer", minimum: 1, maximum: 5 },
+                  flags: { type: "array", items: { type: "string" } },
+                },
+                required: ["summary", "energy_score", "flags"],
+                additionalProperties: false,
+              },
+            },
+          },
+          messages: [
+            {
+              role: "system",
+              content: `You summarize a daily voice check-in with an ME/CFS / Long COVID patient. Write 1-2 warm, plain ${de ? "German" : "English"} sentences (spoken to "you"-form notes for the patient's own history view): how they slept, crash status, main symptoms, yesterday's load. No advice, no alarm, no invented details. energy_score: the patient's energy 1-5${statedEnergy != null ? ` (they stated ${statedEnergy} — use it)` : " (estimate from the conversation; 2 if unclear)"}. flags: empty array, or short markers like "cant_talk" if the check-in was cut short.`,
+            },
+            { role: "user", content: transcript || "(no transcript captured)" },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        lastError = new Error(`summary ${res.status}: ${await res.text()}`);
+        if (res.status >= 400 && res.status < 500) break;
+        continue;
+      }
+      const json = await res.json();
+      const parsed = JSON.parse(json.choices[0].message.content);
+      return {
+        summary: parsed.summary,
+        energyScore: statedEnergy ?? parsed.energy_score,
+        flags: parsed.flags?.length ? parsed.flags : undefined,
+      };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  // Templated fallback — finalize must always POST.
+  console.error("[mecfs-agent] summary generation failed, using fallback", lastError);
+  const bits = [
+    recorded.symptoms.length ? `symptoms: ${recorded.symptoms.join(", ")}` : "",
+    recorded.activities.length ? `activities: ${recorded.activities.join(", ")}` : "",
+  ].filter(Boolean);
+  return {
+    summary: de
+      ? `Check-in abgeschlossen${bits.length ? ` — ${bits.join("; ")}` : ""}.`
+      : `Check-in completed${bits.length ? ` — ${bits.join("; ")}` : ""}.`,
+    energyScore: statedEnergy ?? 2,
+  };
+}
+
 // HealthKit snapshot — comes from the client via LiveKit participant metadata.
 // Null fields mean "couldn't read" (no Apple Watch, denied permission,
 // simulator, Android). See HEALTHKIT.md for the full mapping.

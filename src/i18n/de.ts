@@ -61,6 +61,9 @@ export const de: Translations = {
     notEnoughDataBody:
       "Uhr synchronisieren und einchecken — die Einschätzung aktualisiert sich von selbst.",
     basedOnResearch: "Auf Forschung basierend",
+    listen: "Vorlesen",
+    stopListening: "Stopp",
+    loadingAudio: "Audio wird vorbereitet…",
     levelGreen: "Stabiler Tag",
     levelYellow: "Geh es sanft an",
     levelRed: "Ruhetag",

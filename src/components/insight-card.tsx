@@ -1,4 +1,5 @@
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from "react-native";
@@ -42,8 +43,39 @@ export function InsightCard({ compact }: { compact?: boolean }) {
   const router = useRouter();
   const deviceId = useDeviceId();
   const [scienceOpen, setScienceOpen] = useState(false);
+  const [loadingAudio, setLoadingAudio] = useState(false);
 
   const insight = useQuery(api.insights.latestInsight, deviceId ? { deviceId } : "skip");
+  const speakInsight = useAction(api.insights.speakInsight);
+
+  // Server-generated OpenAI TTS of recommendation + summary. The player is
+  // released automatically on unmount, which also stops playback.
+  const player = useAudioPlayer();
+  const playerStatus = useAudioPlayerStatus(player);
+  const speaking = playerStatus.playing;
+
+  const spokenText = [insight?.recommendation, insight?.summary].filter(Boolean).join(" ");
+
+  const toggleSpeech = async () => {
+    if (speaking) {
+      player.pause();
+      return;
+    }
+    if (loadingAudio || !deviceId) return;
+    setLoadingAudio(true);
+    try {
+      const url = await speakInsight({ deviceId });
+      if (url) {
+        await setAudioModeAsync({ playsInSilentMode: true });
+        player.replace(url);
+        player.play();
+      }
+    } catch (e) {
+      console.warn("[insights] tts playback failed", e);
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
 
   const level = insight?.energyLevel ?? null;
   const isAnalyzing = insight?.status === "analyzing";
@@ -130,6 +162,29 @@ export function InsightCard({ compact }: { compact?: boolean }) {
               </ThemedText>
             </View>
           </View>
+
+          {/* Voice-first app: let the read be heard, not just read. */}
+          {spokenText ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={toggleSpeech}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.researchLink,
+                styles.listenRow,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              {loadingAudio ? <ActivityIndicator size="small" /> : null}
+              <ThemedText type="link">
+                {loadingAudio
+                  ? t("insights.loadingAudio")
+                  : speaking
+                    ? `■ ${t("insights.stopListening")}`
+                    : `▶ ${t("insights.listen")}`}
+              </ThemedText>
+            </Pressable>
+          ) : null}
 
           {/* The one thing to act on, first — a calm callout, not a footnote. */}
           {insight.recommendation ? (
@@ -249,6 +304,7 @@ const styles = StyleSheet.create({
   },
   recommendationText: { lineHeight: 22 },
   researchLink: { marginTop: Spacing.one, alignSelf: "flex-start" },
+  listenRow: { flexDirection: "row", alignItems: "center", gap: Spacing.two },
   analyzing: {
     flexDirection: "row",
     alignItems: "center",

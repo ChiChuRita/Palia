@@ -15,6 +15,7 @@
     "convex": "^1.39.1",
     "dotenv": "^17.4.2",
     "expo": "~56.0.8",
+    "expo-audio": "~56.0.12",
     "expo-build-properties": "~56.0.16",
     "expo-constants": "~56.0.15",
     "expo-dev-client": "~56.0.18",

@@ -104,6 +104,10 @@ export default defineSchema({
     // "analyzing" while the scheduled analyst runs, "ready" once written.
     // Optional so older rows (pre-field) remain schema-valid; treat missing as ready.
     status: v.optional(v.union(v.literal("analyzing"), v.literal("ready"))),
+    // Cached OpenAI TTS audio of recommendation+summary. ttsText is the exact
+    // text the audio was generated from — regenerate when the analyst rewrites it.
+    ttsStorageId: v.optional(v.id("_storage")),
+    ttsText: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_device_date", ["deviceId", "dateKey"]),
 });

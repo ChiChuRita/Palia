@@ -111,6 +111,11 @@ export const writeInsight = internalMutation({
       .first();
     // ctx.db.replace would drop fields; for the upsert we want a full overwrite
     // of the analyst output (review bug: patch left stale fields behind).
+    // That intentionally drops any cached TTS audio (the text changed) — delete
+    // the orphaned blob so storage doesn't accumulate.
+    if (existing?.ttsStorageId) {
+      await ctx.storage.delete(existing.ttsStorageId);
+    }
     const doc = {
       deviceId: args.deviceId,
       dateKey: args.dateKey,
@@ -529,6 +534,65 @@ async function runAnalysisCore(
 
   return { ok: true, dateKey, energyLevel: result.energyLevel };
 }
+
+// ── Voice playback: OpenAI TTS of recommendation + summary ─────────────────
+
+export const saveInsightAudio = internalMutation({
+  args: { insightId: v.id("insights"), storageId: v.id("_storage"), text: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.insightId);
+    if (!existing) {
+      // Insight was replaced while we were generating — drop the new blob too.
+      await ctx.storage.delete(args.storageId);
+      return;
+    }
+    if (existing.ttsStorageId) await ctx.storage.delete(existing.ttsStorageId);
+    await ctx.db.patch(args.insightId, { ttsStorageId: args.storageId, ttsText: args.text });
+  },
+});
+
+// Returns a playable URL for the latest insight, generating and caching the
+// audio on first request. Voice matches the check-in agent's default variant.
+export const speakInsight = action({
+  args: { deviceId: v.string() },
+  handler: async (ctx, args): Promise<string | null> => {
+    const insight: Doc<"insights"> | null = await ctx.runQuery(api.insights.latestInsight, {
+      deviceId: args.deviceId,
+    });
+    if (!insight) return null;
+    const text = [insight.recommendation, insight.summary].filter(Boolean).join(" ");
+    if (!text) return null;
+
+    if (insight.ttsStorageId && insight.ttsText === text) {
+      const cached = await ctx.storage.getUrl(insight.ttsStorageId);
+      if (cached) return cached;
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice: "marin", // agent/src/variants.ts DEFAULT_VARIANT — same companion voice
+        input: text,
+        instructions:
+          "Speak slowly, calmly and warmly — a gentle companion for someone with chronic fatigue. Never rushed, never alarmed.",
+        response_format: "mp3",
+      }),
+    });
+    if (!res.ok) throw new Error(`openai tts ${res.status}: ${await res.text()}`);
+
+    const storageId = await ctx.storage.store(await res.blob());
+    await ctx.runMutation(internal.insights.saveInsightAudio, {
+      insightId: insight._id,
+      storageId,
+      text,
+    });
+    return await ctx.storage.getUrl(storageId);
+  },
+});
 
 // ── Public action: the manual "Re-analyze" button ──────────────────────────
 export const analyzeToday = action({

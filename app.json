@@ -89,7 +89,8 @@
           }
         }
       ],
-      "./plugins/without-push-notifications"
+      "./plugins/without-push-notifications",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

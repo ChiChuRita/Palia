@@ -43,6 +43,7 @@ export const mintToken = action({
 
     const sessionId: Id<"sessions"> = await ctx.runMutation(api.sessions.start, {
       deviceId: args.deviceId,
+      locale: args.locale,
     });
 
     // The user's recurring symptoms (last 14 days) — the agent asks these by

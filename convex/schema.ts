@@ -4,6 +4,9 @@ import { v } from "convex/values";
 export default defineSchema({
   sessions: defineTable({
     deviceId: v.string(),
+    // "en" | "de" — set at mint time; the Stage-2 analyst writes the insight
+    // in this language. Optional: older rows predate the field.
+    locale: v.optional(v.string()),
     startedAt: v.number(),
     endedAt: v.optional(v.number()),
     summary: v.optional(v.string()),
@@ -100,6 +103,9 @@ export default defineSchema({
     summary: v.string(),
     topTrigger: v.optional(v.string()),
     recommendation: v.optional(v.string()),
+    // The analyst's one-line internal justification — stored for debugging
+    // and future evals, never rendered in the app.
+    rationale: v.optional(v.string()),
     model: v.string(),
     // "analyzing" while the scheduled analyst runs, "ready" once written.
     // Optional so older rows (pre-field) remain schema-valid; treat missing as ready.

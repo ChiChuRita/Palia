@@ -4,10 +4,11 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { markInsightAnalyzing } from "./insights";
 
 export const start = mutation({
-  args: { deviceId: v.string() },
+  args: { deviceId: v.string(), locale: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const sessionId = await ctx.db.insert("sessions", {
       deviceId: args.deviceId,
+      locale: args.locale,
       startedAt: Date.now(),
       status: "active",
     });

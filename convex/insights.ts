@@ -49,6 +49,7 @@ type AnalystResult = {
   summary: string;
   topTrigger?: string;
   recommendation?: string;
+  rationale?: string;
 };
 
 // ── Read side: everything the analyst needs, in one query ──────────────────
@@ -77,7 +78,23 @@ export const gatherContext = internalQuery({
       .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
       .order("desc")
       .take(40);
-    return { snapshots, sessions, symptoms, activities };
+    // Score history for continuity ("steadier than yesterday", multi-day
+    // slides). Skips "analyzing" placeholders.
+    const priorInsights = (
+      await ctx.db
+        .query("insights")
+        .withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId))
+        .order("desc")
+        .take(8)
+    )
+      .filter((i) => i.status !== "analyzing")
+      .map((i) => ({
+        dateKey: i.dateKey,
+        stabilityScore: i.stabilityScore ?? null,
+        energyLevel: i.energyLevel,
+        topTrigger: i.topTrigger ?? null,
+      }));
+    return { snapshots, sessions, symptoms, activities, priorInsights };
   },
 });
 
@@ -99,6 +116,7 @@ export const writeInsight = internalMutation({
     summary: v.string(),
     topTrigger: v.optional(v.string()),
     recommendation: v.optional(v.string()),
+    rationale: v.optional(v.string()),
     model: v.string(),
     status: v.union(v.literal("analyzing"), v.literal("ready")),
   },
@@ -127,6 +145,7 @@ export const writeInsight = internalMutation({
       summary: args.summary,
       topTrigger: args.topTrigger,
       recommendation: args.recommendation,
+      rationale: args.rationale,
       model: args.model,
       status: args.status,
       createdAt: Date.now(),
@@ -368,28 +387,97 @@ function utcDateKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-const ANALYST_SYSTEM = `You are a calm pacing analyst for someone with ME/CFS or Long COVID. The single most important thing you produce is a daily Stability Score that helps them PACE — stay inside their energy envelope and avoid post-exertional malaise (PEM).
+// The curated evidence the analyst grounds its read in — the same six
+// principles the app's "science behind this" screen shows (src/lib/evidence.ts
+// + src/i18n science entries; keep in sync). The model may only lean on and
+// tag these; it never sees or invents other sources.
+const EVIDENCE_BRIEF = `# Evidence base — the ONLY principles you may lean on (tag = evidenceTags key)
+- hrv_pacing (Workwell Foundation; ME Association 2025 HR-pacing study; Altini/HRV4Training): a morning HRV well below the personal baseline signals nervous-system load; easing off when HRV dips helps avoid pushing into a crash. Mild flag ≥15% below baseline, strong >20%.
+- rhr_strain (Workwell; Bateman Horne): resting heart rate several beats above the personal usual is an early strain marker — a "go gentle" cue. Mild +5–8 bpm, strong >8 bpm (absolute bpm, not %).
+- sleep_quality (Bateman Horne; NICE NG206): unrefreshing, short, or broken sleep is a core ME/CFS feature and one of the strongest day-to-day capacity predictors; a short night lowers the day's envelope. Mild <6h, strong <5h; unrefreshing escalates a mild flag.
+- energy_envelope (AMMES; Bateman Horne): stay within the sustainable limit — often ~half of what one feels capable of, resting before exhaustion — to keep a stable baseline.
+- pem_avoidance (CDC; Workwell): PEM is a delayed crash 12–48h after overexertion, lasting days; pacing stays below the trigger threshold rather than pushing through and paying later.
+- pacing_general (NICE NG206 2021; Patient-Led Research Collaborative): clinical guidance recommends pacing and energy management, never pushing through; rest is part of recovery, not failure.`;
 
-You receive: passive wearable data (HRV and resting heart rate with personal baselines, sleep, steps), recent voice check-in symptoms/activities, and a deterministic "pem_signal" (research-tuned flags + a fallback score). Treat pem_signal as your anchor. Symptom severity is 0-5: severity 0 means the daily check-in asked about a tracked symptom and it was NOT present that day — a good sign, not a mild symptom.
+function analystSystem(locale: string): string {
+  const language = locale === "de" ? "German (informal du-form)" : "English";
+  return `# Role
+You are a calm pacing analyst for someone with ME/CFS or Long COVID. You produce their daily Stability Score and read, helping them PACE — stay inside their energy envelope and avoid post-exertional malaise (PEM).
 
-Output STRICT JSON only, no prose:
-{"stabilityScore": <number 1.0-5.0>, "scoreDrivers": ["2-4 short plain-language phrases — see rules below"], "evidenceTags": ["subset of the allowed tags"], "summary": "2-3 warm, plain sentences spoken to 'you'", "topTrigger": "short phrase or null", "recommendation": "one gentle, non-prescriptive suggestion or null"}
+# Input contract
+You receive JSON: passive wearable data (HRV and resting heart rate with personal baselines, sleep, steps), recent voice check-in symptoms/activities, prior_insights (recent daily scores, oldest last), and a deterministic "pem_signal" (research-tuned flags + a fallback score computed from the thresholds in the evidence base below). Symptom severity is 0-5: severity 0 means the daily check-in asked about a tracked symptom and it was NOT present that day — a good sign, not a mild symptom.
 
-Scoring (Visible-style, higher = more stable):
+${EVIDENCE_BRIEF}
+
+# Scoring rules (Visible-style, higher = more stable)
 - Anchor to pem_signal. Roughly: 0 flags ≈ 4.5–5.0, one mild flag ≈ 3.0–4.0, one strong or two flags ≈ 1.5–2.5, several ≈ 1.0–1.5.
-- You may nudge ±0.5 using symptoms/activities, but do not contradict strong wearable flags.
-- scoreDrivers are read by a layperson on the app's home card. Each must be a short everyday-words phrase, grounded in a real figure from the data — but lead with the meaning, not the metric. Write "slept only 4.5 hours" not "sleep 4.5h"; "heart recovery (HRV) 18% below your usual" not "HRV 18% below baseline"; "you reported a crash yesterday" not "PEM flag". Never bare abbreviations, never invented numbers.
+- You may nudge from the anchor using symptoms/activities. You may always score LOWER than the anchor when check-in evidence justifies it (conservative is safe), but never more than 0.5 ABOVE it — wearable flags are never outvoted by optimism. (Enforced in code; contradictions are clamped.)
+- Use prior_insights for continuity: name a trend when real ("third day in a row below 3"), never invent one.
+- scoreDrivers are read by a layperson on the app's home card: 2-4 short everyday-words phrases, each grounded in a real figure from the data — lead with the meaning, not the metric. "slept only 4.5 hours", not "sleep 4.5h"; "heart recovery (HRV) 18% below your usual", not "HRV 18% below baseline". Never bare abbreviations, never invented numbers. If a value is not in the data, do not mention it.
 
-evidenceTags — choose ONLY from: hrv_pacing, rhr_strain, sleep_quality, energy_envelope, pem_avoidance, pacing_general. Pick the principles your read leans on. Always include pacing_general. NEVER write study names or URLs.
+# Evidence tags
+evidenceTags: pick ONLY the tags above whose principle your read actually leans on. Always include pacing_general. NEVER write study names or URLs in any text field.
 
-Tone (evidence-based, NICE 2021 / CDC / Bateman Horne):
-- Validate; reframe rest as healing, not weakness. A lower score is information, not failure.
-- NEVER give medical advice, name treatments/medications, or say "exercise"/"push through"/"work out". Never alarm.`;
+# Language & tone (NICE 2021 / CDC / Bateman Horne aligned)
+- Write summary, recommendation, topTrigger, and scoreDrivers in ${language}.
+- Speak to "you", warm and plain. Validate; reframe rest as healing, not weakness. A lower score is information, not failure.
+- NEVER give medical advice, name treatments/medications/supplements, or say "exercise"/"push through"/"work out". Never alarm.
+
+# Output
+Fill every field of the response schema. rationale: ONE short English sentence for the engineering log — why this score (e.g. "two strong flags, symptoms confirm; anchored at 1.9"). It is never shown to the user.`;
+}
+
+// Strict output contract — schema-enforced by the API, so the prose prompt no
+// longer describes JSON shape (per OpenAI reasoning-model guidance).
+const ANALYST_RESPONSE_SCHEMA = {
+  type: "json_schema",
+  json_schema: {
+    name: "pacing_read",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        stabilityScore: { type: "number", minimum: 1, maximum: 5 },
+        scoreDrivers: { type: "array", items: { type: "string" }, maxItems: 4 },
+        evidenceTags: { type: "array", items: { type: "string", enum: [...EVIDENCE_TAGS] } },
+        summary: { type: "string" },
+        topTrigger: { type: ["string", "null"] },
+        recommendation: { type: ["string", "null"] },
+        rationale: { type: "string" },
+      },
+      required: [
+        "stabilityScore",
+        "scoreDrivers",
+        "evidenceTags",
+        "summary",
+        "topTrigger",
+        "recommendation",
+        "rationale",
+      ],
+      additionalProperties: false,
+    },
+  },
+} as const;
+
+// Deterministic zero-tolerance guardrail: the prompt forbids advice/treatment
+// talk, but forbidding in code is what makes it a guarantee. A hit drops the
+// offending field back to the deterministic fallback (never the whole read).
+const FORBIDDEN_OUTPUT =
+  /\b(exercise|work[- ]?out|training|push through|medication|medikament\w*|supplement\w*|nahrungsergänzung\w*|dosage|dosis|sport)\b/i;
+
+function guardText(field: string, text: string | undefined): string | undefined {
+  if (text && FORBIDDEN_OUTPUT.test(text)) {
+    console.warn(`[insights] guardrail: dropped ${field}: "${text}"`);
+    return undefined;
+  }
+  return text;
+}
 
 async function callAnalyst(
   apiKey: string,
   payload: unknown,
-  signal: Signal
+  signal: Signal,
+  locale: string
 ): Promise<AnalystResult> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -399,9 +487,9 @@ async function callAnalyst(
       // High reasoning: this runs in the background after the check-in, so
       // latency is irrelevant and we want the most careful pacing read.
       reasoning_effort: "high",
-      response_format: { type: "json_object" },
+      response_format: ANALYST_RESPONSE_SCHEMA,
       messages: [
-        { role: "system", content: ANALYST_SYSTEM },
+        { role: "system", content: analystSystem(locale) },
         { role: "user", content: JSON.stringify(payload) },
       ],
     }),
@@ -419,12 +507,21 @@ async function callAnalyst(
   let score: number | null = signal.fallback.stabilityScore;
   if (typeof parsed.stabilityScore === "number" && Number.isFinite(parsed.stabilityScore)) {
     score = clampScore(parsed.stabilityScore);
+    // Enforce the anchor rule in code, not prompt-hope: with real wearable
+    // data the model may go LOWER than the deterministic anchor (conservative
+    // is safe) but never more than 0.5 above it — optimism can't outvote flags.
+    const anchor = signal.fallback.stabilityScore;
+    if (signal.hasHealth && anchor != null && score > anchor + 0.5) {
+      console.warn(`[insights] clamped optimistic score ${score} to anchor ${anchor}+0.5`);
+      score = clampScore(anchor + 0.5);
+    }
   }
   const band = bandFromScore(score);
 
-  const drivers = Array.isArray(parsed.scoreDrivers)
+  const rawDrivers = Array.isArray(parsed.scoreDrivers)
     ? (parsed.scoreDrivers.filter((d) => typeof d === "string" && d.trim()) as string[]).slice(0, 4)
     : signal.fallback.scoreDrivers;
+  const drivers = rawDrivers.filter((d) => guardText("scoreDriver", d) !== undefined);
 
   const tags = Array.isArray(parsed.evidenceTags)
     ? (parsed.evidenceTags.filter(
@@ -441,9 +538,10 @@ async function callAnalyst(
     stabilityScore: score,
     scoreDrivers: drivers.length ? drivers : signal.fallback.scoreDrivers,
     evidenceTags: evidenceTags.length ? evidenceTags : ["pacing_general"],
-    summary: str(parsed.summary) ?? signal.fallback.summary,
-    topTrigger: str(parsed.topTrigger),
-    recommendation: str(parsed.recommendation),
+    summary: guardText("summary", str(parsed.summary)) ?? signal.fallback.summary,
+    topTrigger: guardText("topTrigger", str(parsed.topTrigger)),
+    recommendation: guardText("recommendation", str(parsed.recommendation)),
+    rationale: str(parsed.rationale),
   };
 }
 
@@ -474,6 +572,8 @@ async function runAnalysisCore(
   // No wearable data AND no check-in content → honest "gray", never green.
   const hasCheckin = data.sessions.length > 0 || data.symptoms.length > 0;
   const apiKey = process.env.OPENAI_API_KEY;
+  // The user's language, from their most recent session (set at mint time).
+  const locale = data.sessions.find((s) => s.locale)?.locale ?? "en";
 
   let result: AnalystResult = signal.fallback;
   let model = "heuristic";
@@ -483,6 +583,7 @@ async function runAnalysisCore(
         date: dateKey,
         today_health: today,
         recent_health: data.snapshots,
+        prior_insights: data.priorInsights,
         recent_sessions: data.sessions.map((s: Doc<"sessions">) => ({
           startedAt: s.startedAt,
           energyScore: s.energyScore ?? null,
@@ -508,7 +609,7 @@ async function runAnalysisCore(
         },
         allowed_evidence_tags: EVIDENCE_TAGS,
       };
-      result = await callAnalyst(apiKey, payload, signal);
+      result = await callAnalyst(apiKey, payload, signal, locale);
       model = "gpt-5.5";
     } catch (e) {
       console.error("[insights] analyst LLM failed; using heuristic fallback", e);
@@ -528,6 +629,7 @@ async function runAnalysisCore(
     summary: result.summary,
     topTrigger: result.topTrigger,
     recommendation: result.recommendation,
+    rationale: result.rationale,
     model,
     status: "ready",
   });

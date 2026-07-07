@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { InsightCard } from "@/components/insight-card";
+import { Trends } from "@/components/trends";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, Spacing } from "@/constants/theme";
@@ -14,12 +15,13 @@ export default function InsightsScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.header}>
-            <ThemedText type="subtitle">{t("insights.tab")}</ThemedText>
+            <ThemedText type="title">{t("insights.tab")}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               {t("insights.subtitle")}
             </ThemedText>
           </View>
           <InsightCard />
+          <Trends />
         </ScrollView>
       </SafeAreaView>
     </ThemedView>

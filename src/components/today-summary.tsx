@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
+import { SymbolView, type SFSymbol } from "expo-symbols";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
@@ -12,7 +13,8 @@ import Animated, {
 
 import { InsightCard } from "@/components/insight-card";
 import { ThemedText } from "@/components/themed-text";
-import { Spacing } from "@/constants/theme";
+import { ThemedView } from "@/components/themed-view";
+import { CardShadow, Radius, ScoreColors, Spacing } from "@/constants/theme";
 import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslation } from "@/i18n";
@@ -22,15 +24,6 @@ import { useDeviceId } from "@/lib/device-id";
 import { readHealthSnapshot, type HealthSnapshot } from "@/lib/health";
 
 import { api } from "@/../convex/_generated/api";
-
-const SCORE_COLORS = [
-  "", // 0 — unused
-  "#b85a5a", // 1 — crash
-  "#d9974a", // 2 — heavy
-  "#c9b97a", // 3 — middle
-  "#7ba374", // 4 — light
-  "#5a8a5e", // 5 — quiet
-] as const;
 
 export function TodaySummary() {
   const deviceId = useDeviceId();
@@ -75,7 +68,11 @@ export function TodaySummary() {
         hrvMs: health.hrvMs,
         hrvBaselineMs: health.hrvBaselineMs,
         restingHrBpm: health.restingHrBpm,
-        sleepHours: health.sleepHoursLastNight,
+        // Never persist a stale sleep sample as last night's — the analyst
+        // would fire a red "only X hours" flag off a night the watch never
+        // saw (the sleepIsLastNight guard otherwise only protects the voice
+        // briefing). null = unknown, same as no sleep data.
+        sleepHours: health.sleepIsLastNight === false ? null : health.sleepHoursLastNight,
         steps: health.stepsYesterday,
       }).catch(() => {
         syncedRef.current = false; // allow a retry on next render
@@ -97,8 +94,8 @@ export function TodaySummary() {
   const pemToday = today?.hadPEMToday === true;
 
   return (
-    <View style={styles.container}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.title}>
+    <ThemedView type="backgroundElement" style={styles.container}>
+      <ThemedText type="smallBold" themeColor="textSecondary">
         {t("today.title")}
       </ThemedText>
 
@@ -114,9 +111,18 @@ export function TodaySummary() {
 
       {pemToday || sleepHoursToday != null ? (
         <View style={styles.contextRow}>
-          {pemToday ? <ContextChip text={t("today.pemToday")} emphasized /> : null}
+          {pemToday ? (
+            <ContextChip
+              symbol="arrow.down.circle.fill"
+              iconColor="#FF3B30"
+              text={t("today.pemToday")}
+              emphasized
+            />
+          ) : null}
           {sleepHoursToday != null ? (
             <ContextChip
+              symbol="bed.double.fill"
+              iconColor="#5856D6"
               text={t("today.sleepHours", {
                 value: sleepHoursToday.toFixed(1),
               })}
@@ -128,22 +134,35 @@ export function TodaySummary() {
       <View style={styles.insightSlot}>
         <InsightCard compact />
       </View>
-    </View>
+    </ThemedView>
   );
 }
 
-function ContextChip({ text, emphasized }: { text: string; emphasized?: boolean }) {
+function ContextChip({
+  text,
+  emphasized,
+  symbol,
+  iconColor,
+}: {
+  text: string;
+  emphasized?: boolean;
+  symbol?: SFSymbol;
+  iconColor?: string;
+}) {
   const theme = useTheme();
   return (
     <View
       style={[
         styles.chip,
         {
-          backgroundColor: emphasized ? theme.backgroundSelected : theme.backgroundElement,
+          backgroundColor: emphasized ? theme.backgroundSelected : theme.background,
         },
       ]}
     >
-      <ThemedText type="small">{text}</ThemedText>
+      {symbol ? (
+        <SymbolView name={symbol} size={15} tintColor={iconColor} weight="semibold" />
+      ) : null}
+      <ThemedText type="smallBold">{text}</ThemedText>
     </View>
   );
 }
@@ -188,7 +207,7 @@ function ScoreDots({
   const dotSize = size === "large" ? 22 : 10;
   const gap = size === "large" ? Spacing.two : Spacing.one;
   const filled = score ?? 0;
-  const color = score == null ? theme.backgroundSelected : SCORE_COLORS[filled];
+  const color = score == null ? theme.backgroundSelected : ScoreColors[filled];
 
   return (
     <View style={[styles.dotsRow, { gap }]}>
@@ -241,10 +260,10 @@ const styles = StyleSheet.create({
   container: {
     gap: Spacing.three,
     alignItems: "center",
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+    padding: Spacing.four,
+    borderRadius: Radius.md,
+    ...CardShadow,
   },
-  title: { letterSpacing: 1.4, textTransform: "uppercase" },
   dotsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -262,8 +281,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.two,
     borderRadius: 999,
   },
   insightSlot: { width: "100%" },

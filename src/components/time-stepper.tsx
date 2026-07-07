@@ -28,7 +28,7 @@ export function TimeStepper({
     <View style={styles.row}>
       <StepButton label="−" onPress={() => shift(-STEP_MIN)} theme={theme} />
       <View style={[styles.value, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="subtitle">{formatTime(hour, minute)}</ThemedText>
+        <ThemedText type="title">{formatTime(hour, minute)}</ThemedText>
       </View>
       <StepButton label="+" onPress={() => shift(STEP_MIN)} theme={theme} />
     </View>

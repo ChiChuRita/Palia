@@ -12,7 +12,8 @@ import * as openai from "@livekit/agents-plugin-openai";
 initializeLogger({ pretty: true, level: "warn" });
 
 import { runCheckin, type CheckinUserData } from "../src/tasks.js";
-import { appendTranscript, finalize, generateSummary } from "../src/tools.js";
+import { analyzeTranscript, appendTranscript, finalize, persistRecords } from "../src/tools.js";
+import type { Analysis } from "../src/tools.js";
 
 const scenario = (process.argv[2] ?? "happy") as "happy" | "crisis" | "canttalk";
 const sessionId = process.env.SESSION_ID;
@@ -51,6 +52,7 @@ const TURNS: Record<typeof scenario, string[]> = {
 };
 
 let finalized: { summary: string; energyScore: number; flags?: string[] } | null = null;
+let analysis: Analysis | null = null;
 let disconnected = false;
 const transcript: string[] = [];
 
@@ -59,16 +61,20 @@ const userData: CheckinUserData = {
   locale,
   healthSnapshot: null,
   symptomPanel: ["fatigue", "brain_fog"],
-  recorded: { symptoms: [], activities: [] },
 };
 
 const root = voice.Agent.create<CheckinUserData>({
   id: "checkin-root",
-  instructions: "You coordinate a daily check-in. Never speak unprompted.",
+  instructions:
+    "You coordinate a daily voice check-in and never speak unprompted. If the user speaks anyway, reply with a few warm spoken words in their language — no questions, no lists, no advice, and natural idiomatic phrasing only (never translated-sounding lines like 'danke fürs Teilen').",
   tools: {},
   onEnter: (actx) =>
     runCheckin(actx, {
-      generateSummary: (recorded, e) => generateSummary(transcript.join("\n"), recorded, locale, e),
+      analyze: async () => {
+        analysis = await analyzeTranscript(transcript.join("\n"), locale);
+        return analysis;
+      },
+      persist: (a) => persistRecords(sessionId, a),
       finalize: async (s) => {
         finalized = s;
         await finalize(sessionId, s);
@@ -83,7 +89,6 @@ const root = voice.Agent.create<CheckinUserData>({
 const session = new voice.AgentSession<CheckinUserData>({
   llm: new openai.LLM({ model: "gpt-5.4-mini", reasoningEffort: "low" }),
   userData,
-  maxToolSteps: 6,
 });
 
 session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
@@ -126,14 +131,15 @@ console.log(
 );
 
 const f = finalized as { summary: string; energyScore: number; flags?: string[] } | null;
+const a = analysis as Analysis | null;
 const failures: string[] = [];
 if (scenario === "happy") {
   if (!f) failures.push("did not finalize");
   if (!disconnected) failures.push("did not disconnect");
-  if (userData.recorded.symptoms.length < 1) failures.push("no symptoms recorded");
-  if (userData.recorded.activities.length < 1) failures.push("no activities recorded");
-  if (userData.hadPEMToday !== true) failures.push("crash not recorded");
-  if (userData.energy !== 2) failures.push(`energy ${userData.energy} !== 2`);
+  if (!a || a.symptoms.length < 1) failures.push("no symptoms extracted");
+  if (!a || a.activities.length < 1) failures.push("no activities extracted");
+  if (a?.hadPEMToday !== true) failures.push("crash not extracted");
+  if (a?.energyScore !== 2) failures.push(`energy ${a?.energyScore} !== 2`);
 }
 if (scenario === "crisis") {
   if (f) failures.push("finalized during crisis");

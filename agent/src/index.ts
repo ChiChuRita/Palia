@@ -1,35 +1,22 @@
 import "dotenv/config";
 
 import { fileURLToPath } from "node:url";
-import {
-  type JobContext,
-  type JobProcess,
-  ServerOptions,
-  cli,
-  defineAgent,
-  inference,
-  voice,
-} from "@livekit/agents";
+import { type JobContext, ServerOptions, cli, defineAgent, voice } from "@livekit/agents";
 import * as openai from "@livekit/agents-plugin-openai";
+import { RoomEvent, type RemoteParticipant } from "@livekit/rtc-node";
 
 import { ttsInstructions } from "./prompts.js";
 import { runCheckin, type CheckinUserData } from "./tasks.js";
 import { SYMPTOM_CATEGORY_KEYS, type SymptomCategory } from "./taxonomy.js";
-import { appendTranscript, finalize, generateSummary, type HealthSnapshot } from "./tools.js";
-
-// Turn patience for this population (ported from the old Bot Lab variant A):
-// generous silence before the agent replies, and it NEVER talks over the user.
-const VAD_MIN_SILENCE_S = 0.8;
-const ENDPOINT_MIN_DELAY_MS = 800;
-const ENDPOINT_MAX_DELAY_MS = 4000;
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+import {
+  analyzeTranscript,
+  appendTranscript,
+  finalize,
+  persistRecords,
+  type HealthSnapshot,
+} from "./tools.js";
 
 export default defineAgent({
-  prewarm: (proc: JobProcess) => {
-    proc.userData.vad = new inference.VAD({ minSilenceDuration: VAD_MIN_SILENCE_S });
-  },
-
   entry: async (ctx: JobContext) => {
     await ctx.connect();
 
@@ -44,33 +31,45 @@ export default defineAgent({
     // metadata (mintToken in Convex). The old Bot Lab `variant` field is
     // accepted and ignored.
     const participant = await ctx.waitForParticipant();
-    let locale: "en" | "de" = "en";
-    let healthSnapshot: HealthSnapshot | null = null;
-    let symptomPanel: SymptomCategory[] = [];
+    const userData: CheckinUserData = {
+      sessionId,
+      locale: "en",
+      healthSnapshot: null,
+      symptomPanel: [],
+    };
     try {
       const parsed = JSON.parse(participant.metadata || "{}");
-      if (parsed.locale === "de") locale = "de";
+      if (parsed.locale === "de") userData.locale = "de";
       if (parsed.healthSnapshot && typeof parsed.healthSnapshot === "object") {
-        healthSnapshot = parsed.healthSnapshot as HealthSnapshot;
+        userData.healthSnapshot = parsed.healthSnapshot as HealthSnapshot;
       }
       if (Array.isArray(parsed.symptomPanel)) {
-        symptomPanel = parsed.symptomPanel.filter(
+        userData.symptomPanel = parsed.symptomPanel.filter(
           (c: unknown): c is SymptomCategory =>
             typeof c === "string" && (SYMPTOM_CATEGORY_KEYS as readonly string[]).includes(c)
         );
       }
+      // Continuity fields — all optional, shaped server-side in mintToken.
+      if (parsed.lastCheckin && typeof parsed.lastCheckin === "object")
+        userData.lastCheckin = parsed.lastCheckin;
+      if (parsed.lastCrash && typeof parsed.lastCrash === "object")
+        userData.lastCrash = parsed.lastCrash;
+      if (parsed.symptomWords && typeof parsed.symptomWords === "object")
+        userData.symptomWords = parsed.symptomWords;
+      if (["morning", "afternoon", "evening"].includes(parsed.daypart))
+        userData.daypart = parsed.daypart;
+      if (typeof parsed.name === "string" && parsed.name.trim())
+        userData.name = parsed.name.trim().slice(0, 40);
+      if (typeof parsed.careNote === "string" && parsed.careNote.trim())
+        userData.careNote = parsed.careNote.trim().slice(0, 400);
     } catch {
       /* leave defaults */
     }
-    console.log(`[mecfs-agent] locale=${locale} health=${healthSnapshot ? "yes" : "none"}`);
-
-    const userData: CheckinUserData = {
-      sessionId,
-      locale,
-      healthSnapshot,
-      symptomPanel,
-      recorded: { symptoms: [], activities: [] },
-    };
+    const locale = userData.locale;
+    console.log(
+      `[mecfs-agent] locale=${locale} health=${userData.healthSnapshot ? "yes" : "none"} ` +
+        `continuity=${userData.lastCheckin ? "yes" : "none"} daypart=${userData.daypart ?? "?"}`
+    );
 
     // Plain-text transcript mirror for the summary model (the same lines are
     // POSTed to Convex by the listener below).
@@ -81,20 +80,72 @@ export default defineAgent({
       // The root never generates speech itself — it says deterministic lines
       // and runs the box tasks, each with its own narrow prompt. The runner
       // lives in tasks.ts so the smoke test drives the identical flow.
-      instructions: "You coordinate a daily check-in. Never speak unprompted.",
+      // The second sentence is a guardrail for the brief window after the last
+      // box while extraction runs: without it, a patient turn there gets a
+      // generic assistant-mode reply (markdown lists — caught by bench/traces).
+      instructions:
+        "You coordinate a daily voice check-in and never speak unprompted. If the user speaks anyway, reply with a few warm spoken words in their language — no questions, no lists, no advice, and natural idiomatic phrasing only (never translated-sounding lines like 'danke fürs Teilen').",
       tools: {},
       onEnter: (actx) =>
         runCheckin(actx, {
-          generateSummary: (recorded, statedEnergy) =>
-            generateSummary(transcriptLines.join("\n"), recorded, locale, statedEnergy),
+          // Zero user lines (e.g. the call dropped before the first answer):
+          // nothing to save — the runner skips persist/finalize on null.
+          analyze: () =>
+            transcriptLines.some((l) => l.startsWith("user:"))
+              ? analyzeTranscript(transcriptLines.join("\n"), locale)
+              : Promise.resolve(null),
+          persist: (a) => persistRecords(sessionId, a),
           finalize: (s) => finalize(sessionId, s),
           disconnect: () => void ctx.room.disconnect().catch(() => {}),
+          onPatientLeft: (completeDropped) => {
+            // Only THE patient we greeted — the agent's own disconnect (or a
+            // stray observer leaving) must not end the check-in.
+            ctx.room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
+              if (p.identity === participant.identity) completeDropped();
+            });
+          },
         }),
     });
 
     const session = new voice.AgentSession<CheckinUserData>({
-      stt: new openai.STT({ model: "gpt-4o-transcribe", useRealtime: true, language: locale }),
-      llm: new openai.LLM({ model: "gpt-5.4-mini", reasoningEffort: "low" }),
+      // gpt-realtime-2 for the conversation itself — the natural turn-taking
+      // and prosody the pipeline couldn't match. The old giant-prompt problem
+      // is gone: each box task hands it a ~40-line prompt.
+      llm: new openai.realtime.RealtimeModel({
+        model: "gpt-realtime-2.1",
+        // 2.1 added an opt-in reasoning knob (default: none). "low" buys
+        // rule-following (re-asking, premature done-calls) for a small
+        // pre-speech pause. Override per env to compare live:
+        // REALTIME_EFFORT=minimal|low|medium|high|xhigh
+        reasoning: { effort: (process.env.REALTIME_EFFORT as never) || "low" },
+        voice: "marin",
+        // Calm but not draggy — measured ~2.5s response gaps at default pace
+        // felt sluggish. ponytail: single knob, dial back to 1.0 if it ever
+        // reads as rushed.
+        speed: 1.1,
+        // Pin the transcription language to the session locale — otherwise
+        // gpt-4o-transcribe auto-detects and occasionally mislabels German
+        // audio as Japanese/other, corrupting the stored transcript.
+        inputAudioTranscription: { model: "gpt-4o-transcribe", language: locale },
+        // far_field: the app is a look-at-the-screen speakerphone experience,
+        // not a phone-to-ear call — near_field degraded the input audio and
+        // the model kept mishearing (live call: "Pythagoras," for German).
+        inputAudioNoiseReduction: { type: "far_field" },
+        // The realtime playground's tuning (user-verified live: snappier and
+        // warmer than our semantic_vad eagerness "low", which read as the
+        // agent being slow). The old 550ms chopping happened under
+        // near_field + gpt-realtime-2; with far_field + 2.1 + 300ms prefix
+        // padding, 500ms holds. Fallback if fragments return: semantic_vad
+        // eagerness "low", interrupt_response false.
+        turnDetection: {
+          type: "server_vad",
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500,
+        },
+      }),
+      // say() (deterministic opening / goodbyes / crisis line) needs a TTS
+      // even alongside a realtime model — same marin voice.
       tts: new openai.TTS({
         model: "gpt-4o-mini-tts",
         // Same companion voice as the app's insight playback. Not in the
@@ -102,16 +153,7 @@ export default defineAgent({
         voice: "marin" as never,
         instructions: ttsInstructions(locale),
       }),
-      vad: ctx.proc.userData.vad as inference.VAD,
       userData,
-      // A patient may name several symptoms in one breath — allow the model
-      // to chain more record_* calls per turn than the default 3.
-      maxToolSteps: 6,
-      turnHandling: {
-        turnDetection: "vad",
-        endpointing: { minDelay: ENDPOINT_MIN_DELAY_MS, maxDelay: ENDPOINT_MAX_DELAY_MS },
-        interruption: { enabled: false },
-      },
     });
 
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
@@ -126,6 +168,8 @@ export default defineAgent({
       if (!text) return;
 
       transcriptLines.push(`${item.role}: ${text}`);
+      // Live trace in the worker log — makes bad calls analyzable in place.
+      console.log(`[transcript] ${item.role === "user" ? "USER " : "AGENT"} | ${text}`);
       void appendTranscript(sessionId, item.role, text).catch((e) =>
         console.error("append transcript failed", e)
       );

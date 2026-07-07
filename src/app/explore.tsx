@@ -1,13 +1,23 @@
 import { useQuery } from "convex/react";
+import { SymbolView, type SFSymbol } from "expo-symbols";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CategoryIcon } from "@/components/category-icon";
+import { PressableScale } from "@/components/pressable-scale";
 import { EnergyScoreEditor, SessionEditSheet } from "@/components/session-edit-sheet";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import {
+  BottomTabInset,
+  CardShadow,
+  MaxContentWidth,
+  Radius,
+  ScoreColors,
+  Spacing,
+} from "@/constants/theme";
 import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslation } from "@/i18n";
@@ -16,14 +26,6 @@ import { useDeviceId } from "@/lib/device-id";
 
 import { api } from "@/../convex/_generated/api";
 import type { Doc, Id } from "@/../convex/_generated/dataModel";
-
-const SCORE_COLORS: Record<number, string> = {
-  1: "#b85a5a",
-  2: "#d9974a",
-  3: "#c9b97a",
-  4: "#7ba374",
-  5: "#5a8a5e",
-};
 
 function formatDay(ts: number, t: (key: string) => string, locale: string) {
   const today = startOfLocalDay(Date.now());
@@ -131,7 +133,7 @@ export default function HistoryScreen() {
     >
       <ThemedView style={styles.container}>
         <View style={styles.header}>
-          <ThemedText type="subtitle">{t("history.title")}</ThemedText>
+          <ThemedText type="title">{t("history.title")}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {t("history.subtitle")}
           </ThemedText>
@@ -143,6 +145,8 @@ export default function HistoryScreen() {
             <View style={styles.weeklyMeta}>
               {weekly.sleep.avgHours != null ? (
                 <MetaPill
+                  symbol="bed.double.fill"
+                  iconColor="#5856D6"
                   label={t("history.sleep")}
                   value={t("history.avgSleep", {
                     value: weekly.sleep.avgHours.toFixed(1),
@@ -151,6 +155,8 @@ export default function HistoryScreen() {
               ) : null}
               {weekly.pemDays > 0 ? (
                 <MetaPill
+                  symbol="arrow.down.circle.fill"
+                  iconColor="#FF3B30"
                   label={t("history.pemDays")}
                   value={
                     weekly.pemDays === 1
@@ -185,6 +191,8 @@ export default function HistoryScreen() {
                 return (
                   <FactRow
                     key={s.category}
+                    kind="symptom"
+                    category={s.category}
                     primary={symptomLabel(s.category)}
                     secondary={`${dayLabel}${sevPart}`}
                     quote={s.sampleWords[0]}
@@ -216,6 +224,8 @@ export default function HistoryScreen() {
                 return (
                   <FactRow
                     key={a.category}
+                    kind="activity"
+                    category={a.category}
                     primary={activityLabel(a.category)}
                     secondary={`${timesLabel}${exPart}`}
                     quote={a.sampleWords[0]}
@@ -247,9 +257,7 @@ export default function HistoryScreen() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
-      <ThemedText type="smallBold" style={styles.sectionTitle}>
-        {title.toUpperCase()}
-      </ThemedText>
+      <ThemedText type="heading">{title}</ThemedText>
       {children}
     </View>
   );
@@ -277,10 +285,14 @@ function MetaPill({
   label,
   value,
   emphasized,
+  symbol,
+  iconColor,
 }: {
   label: string;
   value: string;
   emphasized?: boolean;
+  symbol?: SFSymbol;
+  iconColor?: string;
 }) {
   const theme = useTheme();
   return (
@@ -292,10 +304,15 @@ function MetaPill({
         },
       ]}
     >
-      <ThemedText type="small" themeColor="textSecondary">
-        {label.toUpperCase()}
+      {symbol ? (
+        <View style={[styles.metaIcon, { backgroundColor: iconColor }]}>
+          <SymbolView name={symbol} size={16} tintColor="#FFFFFF" weight="semibold" />
+        </View>
+      ) : null}
+      <ThemedText type="default" style={styles.metaLabel}>
+        {label}
       </ThemedText>
-      <ThemedText type="smallBold">{value}</ThemedText>
+      <ThemedText type="button">{value}</ThemedText>
     </View>
   );
 }
@@ -311,7 +328,7 @@ function WeekPattern({
     <View style={styles.weekRow}>
       {cells.map((cell, i) => {
         const filled = cell.score != null;
-        const color = filled ? SCORE_COLORS[cell.score!] : theme.backgroundElement;
+        const color = filled ? ScoreColors[cell.score!] : theme.backgroundElement;
         const border = filled ? color : theme.backgroundSelected;
         return (
           <Animated.View
@@ -331,25 +348,32 @@ function WeekPattern({
 }
 
 function FactRow({
+  kind,
+  category,
   primary,
   secondary,
   quote,
 }: {
+  kind: "symptom" | "activity";
+  category: string;
   primary: string;
   secondary: string;
   quote?: string;
 }) {
   return (
     <ThemedView type="backgroundElement" style={styles.factRow}>
-      <ThemedText type="default">{primary}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {secondary}
-      </ThemedText>
-      {quote ? (
-        <ThemedText type="small" themeColor="textSecondary" style={styles.quote}>
-          “{quote}”
+      <CategoryIcon kind={kind} category={category} />
+      <View style={styles.factRowInfo}>
+        <ThemedText type="default">{primary}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {secondary}
         </ThemedText>
-      ) : null}
+        {quote ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.quote}>
+            “{quote}”
+          </ThemedText>
+        ) : null}
+      </View>
     </ThemedView>
   );
 }
@@ -441,6 +465,8 @@ function SessionRow({
                 {sessionSymptoms?.map((s) => (
                   <View key={s._id}>
                     <EditableRow
+                      kind="symptom"
+                      category={s.category}
                       label={symptomLabel(s.category)}
                       detail={
                         s.userWords && s.userWords !== symptomLabel(s.category)
@@ -470,6 +496,8 @@ function SessionRow({
                 {sessionActivities?.map((a) => (
                   <View key={a._id}>
                     <EditableRow
+                      kind="activity"
+                      category={a.category}
                       label={activityLabel(a.category)}
                       detail={
                         a.userWords && a.userWords !== activityLabel(a.category)
@@ -530,11 +558,15 @@ function SessionRow({
 }
 
 function EditableRow({
+  kind,
+  category,
   label,
   detail,
   score,
   onPress,
 }: {
+  kind: "symptom" | "activity";
+  category: string;
   label: string;
   detail?: string;
   score: number | null;
@@ -542,17 +574,17 @@ function EditableRow({
 }) {
   const theme = useTheme();
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.editableRow,
         {
           backgroundColor: theme.background,
           borderColor: theme.backgroundSelected,
-          opacity: pressed ? 0.7 : 1,
         },
       ]}
     >
+      <CategoryIcon kind={kind} category={category} size={26} />
       <View style={styles.editableRowInfo}>
         <ThemedText type="default">{label}</ThemedText>
         {detail ? (
@@ -578,7 +610,7 @@ function EditableRow({
           );
         })}
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -601,8 +633,8 @@ function SessionDots({ score }: { score: number | null }) {
             style={[
               styles.sessionDot,
               {
-                backgroundColor: on ? SCORE_COLORS[score] : theme.backgroundElement,
-                borderColor: on ? SCORE_COLORS[score] : theme.backgroundSelected,
+                backgroundColor: on ? ScoreColors[score] : theme.backgroundElement,
+                borderColor: on ? ScoreColors[score] : theme.backgroundSelected,
               },
             ]}
           />
@@ -623,13 +655,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   header: { gap: Spacing.one },
   section: { gap: Spacing.two },
-  sectionTitle: { letterSpacing: 1.4 },
   list: { gap: Spacing.two },
-  quiet: { padding: Spacing.three, borderRadius: Spacing.two },
+  quiet: { padding: Spacing.three, borderRadius: Radius.sm },
   weekRow: {
     flexDirection: "row",
     gap: Spacing.two,
@@ -647,27 +678,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   weeklyMeta: {
-    flexDirection: "row",
     gap: Spacing.two,
     marginTop: Spacing.two,
   },
   metaPill: {
-    flex: 1,
-    paddingVertical: Spacing.two,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
-    gap: Spacing.half,
+    borderRadius: Radius.sm,
+    gap: Spacing.three,
+    ...CardShadow,
   },
+  metaIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metaLabel: { flex: 1 },
   factRow: {
+    flexDirection: "row",
+    alignItems: "center",
     padding: Spacing.three,
-    borderRadius: Spacing.two,
-    gap: Spacing.half,
+    borderRadius: Radius.sm,
+    gap: Spacing.three,
+    ...CardShadow,
   },
+  factRowInfo: { flex: 1, gap: Spacing.half },
   quote: { fontStyle: "italic" },
   sessionCard: {
     padding: Spacing.three,
-    borderRadius: Spacing.two,
+    borderRadius: Radius.sm,
     gap: Spacing.two,
+    ...CardShadow,
   },
   sessionHeader: {
     flexDirection: "row",
@@ -698,7 +743,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     padding: Spacing.three,
-    borderRadius: Spacing.two,
+    borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     gap: Spacing.two,
   },

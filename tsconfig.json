@@ -8,5 +8,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "assets/assets.d.ts"],
-  "exclude": ["node_modules", "agent", "convex/_generated"]
+  "exclude": ["node_modules", "agent", "bench", "convex/_generated"]
 }

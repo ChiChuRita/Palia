@@ -4,20 +4,15 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from "react-native";
 
+import { PressableScale } from "@/components/pressable-scale";
 import { ScienceScreen } from "@/components/science-screen";
 import { ThemedText } from "@/components/themed-text";
-import { Radius, Spacing } from "@/constants/theme";
+import { CardShadow, LevelColors, Radius, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslation } from "@/i18n";
 import { useDeviceId } from "@/lib/device-id";
 
 import { api } from "@/../convex/_generated/api";
-
-const LEVEL_COLOR: Record<string, string> = {
-  green: "#5a8a5e",
-  yellow: "#d9974a",
-  red: "#b85a5a",
-};
 
 const LEVEL_LABEL_KEY: Record<string, string> = {
   green: "insights.levelGreen",
@@ -80,20 +75,18 @@ export function InsightCard({ compact }: { compact?: boolean }) {
   const level = insight?.energyLevel ?? null;
   const isAnalyzing = insight?.status === "analyzing";
   const isGray = level === "gray";
-  const bandColor = level && LEVEL_COLOR[level] ? LEVEL_COLOR[level] : theme.backgroundSelected;
+  const bandColor = level && LevelColors[level] ? LevelColors[level] : theme.backgroundSelected;
   const score = insight?.stabilityScore ?? null;
 
   // ---- Compact (Today view): one quiet, tappable row → Insights tab ----
   if (compact) {
     if (!insight) return null;
     return (
-      <Pressable
+      <PressableScale
         accessibilityRole="button"
         onPress={() => router.navigate("/insights")}
-        style={({ pressed }) => [
-          styles.compactRow,
-          { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
-        ]}
+        // Sits inside the white Today card — gray inset row, Health-style
+        style={[styles.compactRow, { backgroundColor: theme.background }]}
       >
         <View style={[styles.dot, { backgroundColor: bandColor }]} />
         <View style={styles.compactText}>
@@ -111,14 +104,14 @@ export function InsightCard({ compact }: { compact?: boolean }) {
             </ThemedText>
           ) : null}
         </View>
-      </Pressable>
+      </PressableScale>
     );
   }
 
   // ---- Full (Insights tab) ----
   return (
     <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
+      <ThemedText type="smallBold" themeColor="textSecondary">
         {t("insights.title")}
       </ThemedText>
 
@@ -145,8 +138,13 @@ export function InsightCard({ compact }: { compact?: boolean }) {
         <>
           {/* Score hero */}
           <View style={styles.heroRow}>
-            <View style={[styles.scoreRing, { borderColor: bandColor }]}>
-              <ThemedText type="title" style={[styles.scoreNum, { color: bandColor }]}>
+            <View
+              style={[
+                styles.scoreRing,
+                { borderColor: bandColor, backgroundColor: bandColor + "14" },
+              ]}
+            >
+              <ThemedText type="title" style={{ color: bandColor }}>
                 {score != null ? score.toFixed(1) : "—"}
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.scoreOf}>
@@ -157,7 +155,7 @@ export function InsightCard({ compact }: { compact?: boolean }) {
               <ThemedText type="small" themeColor="textSecondary" style={styles.scoreLabel}>
                 {t("insights.scoreLabel")}
               </ThemedText>
-              <ThemedText type="subtitle" style={{ color: bandColor }}>
+              <ThemedText type="title" style={{ color: bandColor }}>
                 {t(LEVEL_LABEL_KEY[insight.energyLevel] ?? "insights.levelYellow")}
               </ThemedText>
             </View>
@@ -176,7 +174,7 @@ export function InsightCard({ compact }: { compact?: boolean }) {
               ]}
             >
               {loadingAudio ? <ActivityIndicator size="small" /> : null}
-              <ThemedText type="link">
+              <ThemedText type="link" themeColor="tint">
                 {loadingAudio
                   ? t("insights.loadingAudio")
                   : speaking
@@ -227,7 +225,9 @@ export function InsightCard({ compact }: { compact?: boolean }) {
             hitSlop={8}
             style={({ pressed }) => [styles.researchLink, { opacity: pressed ? 0.6 : 1 }]}
           >
-            <ThemedText type="link">{t("insights.basedOnResearch")} →</ThemedText>
+            <ThemedText type="link" themeColor="tint">
+              {t("insights.basedOnResearch")} →
+            </ThemedText>
           </Pressable>
         </>
       )}
@@ -263,8 +263,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.four,
     gap: Spacing.two,
+    ...CardShadow,
   },
-  kicker: { letterSpacing: 1.2, textTransform: "uppercase" },
   heroRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -272,14 +272,13 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
   },
   scoreRing: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 4,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 5,
     alignItems: "center",
     justifyContent: "center",
   },
-  scoreNum: { fontSize: 30, lineHeight: 34 },
   scoreOf: { marginTop: -2 },
   heroText: { flex: 1, gap: 2 },
   scoreLabel: { letterSpacing: 1, textTransform: "uppercase" },

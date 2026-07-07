@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { SymbolView } from "expo-symbols";
+import { useEffect } from "react";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -14,44 +15,36 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { TodaySummary } from "@/components/today-summary";
-import { BottomTabInset, Spacing } from "@/constants/theme";
+import { BottomTabInset, CardShadow, Spacing } from "@/constants/theme";
 import { useReduceMotion } from "@/hooks/use-reduce-motion";
 import { useTheme } from "@/hooks/use-theme";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { useTranslation } from "@/i18n";
-import { BOTS, DEFAULT_BOT, type BotId } from "@/lib/bots";
-
-// Dev-only: show the 5-voice Bot Lab picker. Off for the demo build — the
-// check-in just uses DEFAULT_BOT (Marin). Flip to true to A/B voices again.
-const SHOW_BOT_LAB = false;
 
 function borderForState(state: string, fallback: string): string {
   switch (state) {
     case "connecting":
     case "preparing":
     case "ending":
-      return "#e6b800"; // amber — not ready for user input yet
+      return "#FF9500"; // amber — not ready for user input yet
     case "listening":
     case "speaking":
-      return "#3ba76e"; // green — call is live
+      return "#34C759"; // green — call is live
     case "error":
-      return "#c44"; // red
+      return "#FF3B30"; // red
     default:
       return fallback;
   }
 }
 
-export function VoiceCheckIn() {
+export function VoiceCheckIn({ onSwitchToForm }: { onSwitchToForm?: () => void }) {
   const theme = useTheme();
   const reduceMotion = useReduceMotion();
   const { t } = useTranslation();
-  const { state, error, start, end, agentLevel } = useVoiceSession();
-
-  const [bot, setBot] = useState<BotId>(DEFAULT_BOT);
+  const { state, error, start, end, agentLevel, speaker, setSpeaker } = useVoiceSession();
 
   const active = state !== "idle" && state !== "error";
   const buttonLabel = active ? t("common.end") : t("common.start");
-  const selectedBot = BOTS.find((b) => b.id === bot) ?? BOTS[0];
 
   // ---- Animations ----
   //
@@ -135,49 +128,6 @@ export function VoiceCheckIn() {
         <TodaySummary />
 
         <View style={styles.center}>
-          {SHOW_BOT_LAB && !active ? (
-            <View style={styles.picker}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.pickerTitle}>
-                Bot Lab — pick a voice
-              </ThemedText>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pickerRow}
-              >
-                {BOTS.map((b) => {
-                  const selected = b.id === bot;
-                  return (
-                    <Pressable
-                      key={b.id}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={`${b.name}, ${b.blurb}`}
-                      onPress={() => setBot(b.id)}
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor: selected
-                            ? theme.backgroundSelected
-                            : theme.backgroundElement,
-                          borderColor: selected ? "#3ba76e" : theme.backgroundSelected,
-                          borderWidth: selected ? 2 : 1,
-                        },
-                      ]}
-                    >
-                      <ThemedText type="smallBold" style={styles.chipName}>
-                        {b.name}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary" style={styles.chipBlurb}>
-                        {b.blurb}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          ) : null}
-
           <View style={styles.orbWrapper}>
             <Animated.View
               pointerEvents="none"
@@ -193,7 +143,7 @@ export function VoiceCheckIn() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={buttonLabel}
-                onPress={() => (active ? end() : start(bot))}
+                onPress={() => (active ? end() : start())}
                 style={({ pressed }) => [
                   styles.orb,
                   {
@@ -205,7 +155,7 @@ export function VoiceCheckIn() {
                   },
                 ]}
               >
-                <ThemedText type="subtitle" style={styles.orbLabel}>
+                <ThemedText type="title" style={styles.orbLabel}>
                   {buttonLabel}
                 </ThemedText>
               </Pressable>
@@ -216,10 +166,26 @@ export function VoiceCheckIn() {
             {t(`voice.${state}`)}
           </ThemedText>
 
-          {SHOW_BOT_LAB ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.stateLabel}>
-              {selectedBot.name} · {selectedBot.blurb}
-            </ThemedText>
+          {active && Platform.OS === "ios" ? (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: speaker }}
+              accessibilityLabel={t("voice.audioOutput")}
+              onPress={() => setSpeaker(!speaker)}
+              style={({ pressed }) => [
+                styles.speakerToggle,
+                { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <SymbolView
+                name={speaker ? "speaker.wave.2.fill" : "ear"}
+                size={18}
+                tintColor={theme.text}
+              />
+              <ThemedText type="small">
+                {t(speaker ? "voice.speaker" : "voice.earpiece")}
+              </ThemedText>
+            </Pressable>
           ) : null}
 
           {error ? (
@@ -230,6 +196,13 @@ export function VoiceCheckIn() {
         </View>
 
         <View style={styles.footer}>
+          {onSwitchToForm && !active ? (
+            <Pressable accessibilityRole="button" onPress={onSwitchToForm} hitSlop={8}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                {t("form.cantTalk")}
+              </ThemedText>
+            </Pressable>
+          ) : null}
           <ThemedText type="small" themeColor="textSecondary">
             {t("voice.footerCalm")}
           </ThemedText>
@@ -244,6 +217,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
     paddingBottom: BottomTabInset + Spacing.three,
     gap: Spacing.three,
   },
@@ -266,6 +240,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
+    ...CardShadow,
   },
   pulse: {
     position: "absolute",
@@ -276,19 +251,14 @@ const styles = StyleSheet.create({
   },
   orbLabel: { fontWeight: 500 },
   stateLabel: { textAlign: "center" },
-  picker: { width: "100%", gap: Spacing.two },
-  pickerTitle: { textAlign: "center" },
-  pickerRow: { gap: Spacing.two, paddingHorizontal: Spacing.two },
-  chip: {
-    minWidth: 96,
+  speakerToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderRadius: 14,
-    alignItems: "center",
-    gap: 2,
+    borderRadius: 999,
   },
-  chipName: { textAlign: "center" },
-  chipBlurb: { textAlign: "center" },
-  error: { color: "#c44", textAlign: "center" },
-  footer: { alignItems: "center", paddingBottom: Spacing.two },
+  error: { color: "#FF3B30", textAlign: "center" },
+  footer: { alignItems: "center", paddingBottom: Spacing.two, gap: Spacing.two },
 });

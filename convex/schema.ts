@@ -7,6 +7,9 @@ export default defineSchema({
     // "en" | "de" — set at mint time; the Stage-2 analyst writes the insight
     // in this language. Optional: older rows predate the field.
     locale: v.optional(v.string()),
+    // Local hour of day (0-23) at session start, set at mint time. The
+    // post-check-in analyst derives its daypart from it (C6).
+    localHour: v.optional(v.number()),
     startedAt: v.number(),
     endedAt: v.optional(v.number()),
     summary: v.optional(v.string()),
@@ -116,4 +119,22 @@ export default defineSchema({
     ttsText: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_device_date", ["deviceId", "dateKey"]),
+
+  // One per device: the personal context captured at onboarding, preprocessed
+  // once by GPT-5.5 into a small profile that tunes both the voice agent and the
+  // insights analyst. Optional and fail-open — a device with no row behaves as
+  // before. careNote/adjustments/rawContext are in the user's locale.
+  profiles: defineTable({
+    deviceId: v.string(),
+    rawContext: v.string(), // what the user typed, kept for re-runs / transparency
+    // Taxonomy keys the person says they never have — hard-filtered from the panel.
+    excludedSymptoms: v.array(v.string()),
+    // ≤~300 chars of soft guidance folded into the agent + analyst prompts.
+    careNote: v.string(),
+    // 2–4 short user-facing bullets shown on the onboarding "tuning" screen.
+    adjustments: v.array(v.string()),
+    locale: v.string(),
+    model: v.string(),
+    updatedAt: v.number(),
+  }).index("by_device", ["deviceId"]),
 });

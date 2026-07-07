@@ -14,6 +14,7 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as insights from "../insights.js";
 import type * as livekit from "../livekit.js";
+import type * as profile from "../profile.js";
 import type * as sessions from "../sessions.js";
 import type * as taxonomy from "../taxonomy.js";
 
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   insights: typeof insights;
   livekit: typeof livekit;
+  profile: typeof profile;
   sessions: typeof sessions;
   taxonomy: typeof taxonomy;
 }>;

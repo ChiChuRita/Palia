@@ -1,14 +1,23 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { markInsightAnalyzing } from "./insights";
+import { daypartFromHour, markInsightAnalyzing } from "./insights";
+import { ACTIVITY_CATEGORY_KEYS, SYMPTOM_CATEGORY_KEYS } from "./taxonomy";
 
 export const start = mutation({
-  args: { deviceId: v.string(), locale: v.optional(v.string()) },
+  args: {
+    deviceId: v.string(),
+    locale: v.optional(v.string()),
+    // Local hour of day (0-23) — stored so the post-check-in analyst can
+    // narrate for the right part of the day (C6).
+    localHour: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const sessionId = await ctx.db.insert("sessions", {
       deviceId: args.deviceId,
       locale: args.locale,
+      localHour: args.localHour,
       startedAt: Date.now(),
       status: "active",
     });
@@ -103,6 +112,88 @@ export const topSymptomCategoriesForDevice = internalQuery({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([category]) => category);
+  },
+});
+
+// Continuity context for the voice agent: the previous check-in (so the agent
+// can reference yesterday), a recent crash to follow up on, and the user's own
+// words per symptom category (so the agent mirrors their vocabulary across
+// sessions). Everything optional — empty object when the user is new.
+type ContinuityResult = {
+  lastCheckin: {
+    daysAgo: number;
+    summary: string | null;
+    energyScore: number | null;
+    hadPEMToday: boolean | null;
+  } | null;
+  lastCrash: { daysAgo: number; trigger: string | null } | null;
+  symptomWords: Record<string, string>;
+};
+
+export const continuityForDevice = internalQuery({
+  args: { deviceId: v.string() },
+  handler: async (ctx, args): Promise<ContinuityResult> => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    // Calendar-day difference, not elapsed ms: a check-in earlier TODAY must
+    // be daysAgo 0 (C3, "second check-in today" briefing) and yesterday
+    // evening must be 1, even when fewer than 24h have passed.
+    // ponytail: UTC day buckets — a 00:00–02:00 local (DE) check-in lands on
+    // the prior UTC day; pass the client's day start if that ever matters.
+    const daysAgoOf = (ms: number) => Math.floor(now / DAY) - Math.floor(ms / DAY);
+    const sessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_device_started", (q) => q.eq("deviceId", args.deviceId))
+      .order("desc")
+      .take(30);
+    const completed = sessions.filter((s) => s.status === "completed" && s.summary);
+
+    const last = completed[0] ?? null;
+    const lastCheckin = last
+      ? {
+          daysAgo: daysAgoOf(last.startedAt),
+          summary: last.summary ?? null,
+          energyScore: last.energyScore ?? null,
+          hadPEMToday: last.hadPEMToday ?? null,
+        }
+      : null;
+
+    // Most recent crash within follow-up range (PEM recovery spans days).
+    const crash = completed.find((s) => s.hadPEMToday === true) ?? null;
+    let lastCrash: { daysAgo: number; trigger: string | null } | null = null;
+    if (crash) {
+      const daysAgo = daysAgoOf(crash.startedAt);
+      if (daysAgo >= 1 && daysAgo <= 4) {
+        const dateKey = new Date(crash.startedAt).toISOString().slice(0, 10);
+        const insight = await ctx.db
+          .query("insights")
+          .withIndex("by_device_date", (q) =>
+            q.eq("deviceId", args.deviceId).eq("dateKey", dateKey)
+          )
+          .unique()
+          .catch(() => null);
+        lastCrash = { daysAgo, trigger: insight?.topTrigger ?? null };
+      }
+    }
+
+    // Their own words, most recent per category. STRICT gate: max 2 plain
+    // words — userWords can contain transcription garbage from bad-audio
+    // sessions ("couldn't follow my book"), and the agent speaks these back
+    // verbatim. Real vocabulary ("Nebel", "bleiern") is one or two words.
+    const symptomRows = await ctx.db
+      .query("symptoms")
+      .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
+      .order("desc")
+      .take(100);
+    const symptomWords: Record<string, string> = {};
+    for (const s of symptomRows) {
+      if (symptomWords[s.category]) continue;
+      const w = s.userWords?.trim();
+      if (w && w.length <= 24 && /^[\p{L}][\p{L} -]*$/u.test(w) && w.split(/\s+/).length <= 2)
+        symptomWords[s.category] = w;
+    }
+
+    return { lastCheckin, lastCrash, symptomWords };
   },
 });
 
@@ -316,22 +407,108 @@ export const finalize = internalMutation({
       status: "completed",
     });
 
-    // The check-in just ended — kick off the Stage-2 pacing analysis (gpt-5.5,
-    // high reasoning) in the background. We key it to today's stored health
-    // snapshot (the client's local day) so the auto-run and the manual
-    // "Re-analyze" never write to two different dateKeys. We show the Insights
-    // screen an "analyzing" placeholder immediately, then schedule the analyst.
-    const snap = await ctx.db
-      .query("healthSnapshots")
-      .withIndex("by_device_date", (q) => q.eq("deviceId", session.deviceId))
-      .order("desc")
-      .first();
-    const dateKey = snap?.dateKey ?? new Date(session.startedAt).toISOString().slice(0, 10);
-    await markInsightAnalyzing(ctx, session.deviceId, dateKey);
-    await ctx.scheduler.runAfter(0, internal.insights.runAnalysis, {
-      deviceId: session.deviceId,
-      dateKey,
+    await scheduleInsightAnalysis(ctx, session.deviceId, session.startedAt, session.localHour);
+  },
+});
+
+// The check-in just ended — kick off the Stage-2 pacing analysis (gpt-5.5,
+// high reasoning) in the background. We key it to today's stored health
+// snapshot (the client's local day) so the auto-run and the manual
+// "Re-analyze" never write to two different dateKeys. We show the Insights
+// screen an "analyzing" placeholder immediately, then schedule the analyst.
+async function scheduleInsightAnalysis(
+  ctx: MutationCtx,
+  deviceId: string,
+  startedAt: number,
+  localHour?: number
+) {
+  const snap = await ctx.db
+    .query("healthSnapshots")
+    .withIndex("by_device_date", (q) => q.eq("deviceId", deviceId))
+    .order("desc")
+    .first();
+  const dateKey = snap?.dateKey ?? new Date(startedAt).toISOString().slice(0, 10);
+  await markInsightAnalyzing(ctx, deviceId, dateKey);
+  await ctx.scheduler.runAfter(0, internal.insights.runAnalysis, {
+    deviceId,
+    dateKey,
+    // C6: the session's local hour, when the client sent one — the analyst
+    // narrates morning/afternoon/evening accordingly. Absent = today's behavior.
+    daypart: daypartFromHour(localHour) ?? undefined,
+  });
+}
+
+// Non-voice fallback: the whole check-in arrives as one form submission.
+// Public (called from the app), so bounds and categories are validated here —
+// the dots UI can only produce 1–5, but the mutation is reachable by anyone.
+export const submitManualCheckIn = mutation({
+  args: {
+    deviceId: v.string(),
+    locale: v.optional(v.string()),
+    sleepHours: v.optional(v.number()),
+    hadPEMToday: v.optional(v.boolean()),
+    energyScore: v.number(),
+    symptoms: v.array(v.object({ category: v.string(), severity: v.number() })),
+    activities: v.array(v.object({ category: v.string(), exertion: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const isScore = (n: number) => Number.isInteger(n) && n >= 1 && n <= 5;
+    if (!isScore(args.energyScore)) throw new Error("energyScore must be 1–5");
+    if (args.sleepHours !== undefined && (args.sleepHours < 0 || args.sleepHours > 14))
+      throw new Error("sleepHours must be 0–14");
+    if (args.symptoms.length > SYMPTOM_CATEGORY_KEYS.length) throw new Error("too many symptoms");
+    if (args.activities.length > ACTIVITY_CATEGORY_KEYS.length)
+      throw new Error("too many activities");
+    for (const s of args.symptoms) {
+      if (!(SYMPTOM_CATEGORY_KEYS as readonly string[]).includes(s.category))
+        throw new Error(`unknown symptom category: ${s.category}`);
+      if (!isScore(s.severity)) throw new Error("severity must be 1–5");
+    }
+    for (const a of args.activities) {
+      if (!(ACTIVITY_CATEGORY_KEYS as readonly string[]).includes(a.category))
+        throw new Error(`unknown activity category: ${a.category}`);
+      if (!isScore(a.exertion)) throw new Error("exertion must be 1–5");
+    }
+
+    const now = Date.now();
+    // Structured fields carry the day's story; the summary just marks provenance.
+    const summary = args.locale === "de" ? "Heute von Hand eingetragen." : "Logged by hand today.";
+    const sessionId = await ctx.db.insert("sessions", {
+      deviceId: args.deviceId,
+      locale: args.locale,
+      startedAt: now,
+      endedAt: now,
+      status: "completed",
+      summary,
+      energyScore: args.energyScore,
+      flags: ["manual"],
+      sleepHours: args.sleepHours,
+      hadPEMToday: args.hadPEMToday,
     });
+    // userWords stays "" — there is no verbatim phrase, and the History UI
+    // hides empty quotes. A localized label here would go stale on locale switch.
+    for (const s of args.symptoms) {
+      await ctx.db.insert("symptoms", {
+        sessionId,
+        deviceId: args.deviceId,
+        category: s.category,
+        userWords: "",
+        severity: s.severity,
+      });
+    }
+    for (const a of args.activities) {
+      await ctx.db.insert("activities", {
+        sessionId,
+        deviceId: args.deviceId,
+        category: a.category,
+        userWords: "",
+        exertion: a.exertion,
+      });
+    }
+    // ponytail: no "confirmed absent" (severity-0) rows from manual entry;
+    // add if the analyst needs dense series from form-only users.
+    await scheduleInsightAnalysis(ctx, args.deviceId, now);
+    return sessionId;
   },
 });
 

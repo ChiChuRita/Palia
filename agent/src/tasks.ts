@@ -1,408 +1,225 @@
-// The check-in as bounded AgentTasks over shared typed userData.
+// The check-in as ONE voice.AgentTask over one continuous context.
 //
-// Each box (greeter → sleep → crash → symptoms → yesterday → closing) is a
-// voice.AgentTask with a narrow prompt and only the tools it needs. Every task
-// carries two escape tools (crisis_detected / cant_talk_now) plus a *_done
-// tool; completing returns a BoxOutcome to the deterministic runner in
-// index.ts, which decides what happens next. No box order or "already asked"
-// state lives in a prompt — it's all code.
+// The earlier five-box architecture (sleep → crash → … as separate tasks with
+// per-box context copies) created seams on the realtime model: each handoff
+// re-read history cold and re-mirrored it badly (inverted recaps, invented
+// numbers, recycled openers — all caught in live calls). One task = one
+// context = no seams. The interview plan lives in the prompt (prompts.ts).
+//
+// What survives from that era because it was verified good:
+// - NO record_* tools (a realtime model narrates data capture) — records are
+//   extracted from the transcript in one offline pass at the end (tools.ts).
+// - Escape tools (cant_talk_now / crisis_detected) + a silent checkin_done
+//   whose required `energy` param keeps the model from ending before the
+//   energy question.
+// - A turn-cap backstop counted via ConversationItemAdded (the SDK's
+//   onUserTurnCompleted hook never fires on our paths).
+//
+// Greeting, goodbyes, and the nudge are GENERATED (same voice, in-context):
+// the greeting via generateReply in onEnter, the goodbyes as the model's
+// follow-up on the checkin_done / cant_talk_now tool output — the task then
+// completes on that assistant item. Only the crisis line is scripted.
 
 import { llm, voice } from "@livekit/agents";
 import { z } from "zod";
 
 import {
-  cantTalkGoodbye,
-  coveredBriefing,
-  crashPrompt,
+  cantTalkInstructions,
+  checkinPrompt,
   crisisLine,
   crisisPrompt,
-  closingPrompt,
-  goodbyeLine,
-  greeterPrompt,
-  openingLine,
-  sharedStyle,
-  styleReminder,
-  sleepPrompt,
-  symptomsPrompt,
-  yesterdayPrompt,
+  goodbyeInstructions,
+  greetingInstructions,
+  nudgeInstructions,
+  type Daypart,
   type Locale,
 } from "./prompts.js";
+import { type SymptomCategory } from "./taxonomy.js";
 import {
-  ACTIVITY_CATEGORY_KEYS,
-  SYMPTOM_CATEGORY_KEYS,
-  type ActivityCategory,
-  type SymptomCategory,
-} from "./taxonomy.js";
-import {
-  correctLastActivity,
-  correctLastSymptom,
-  recordActivity,
-  recordSessionContext,
-  recordSymptom,
+  summarizeContinuityForPrompt,
   summarizeHealthForPrompt,
+  summarizeProfileForPrompt,
   summarizeSymptomPanelForPrompt,
+  type Analysis,
+  type Continuity,
   type HealthSnapshot,
 } from "./tools.js";
 
-export type BoxOutcome = "done" | "cantTalk" | "crisis";
+export type CheckinOutcome = "done" | "cantTalk" | "crisis" | "dropped";
 
 export type CheckinUserData = {
   sessionId: string;
   locale: Locale;
   healthSnapshot: HealthSnapshot | null;
   symptomPanel: SymptomCategory[];
-  // Short labels of everything recorded so far — feeds the "already covered"
-  // briefing of later boxes and the summary fallback.
-  recorded: { symptoms: string[]; activities: string[] };
-  sleepHours?: number;
-  hadPEMToday?: boolean;
-  energy?: number;
+  // Continuity between calls (all optional — empty for a new user):
+  lastCheckin?: Continuity["lastCheckin"];
+  lastCrash?: Continuity["lastCrash"];
+  symptomWords?: Record<string, string> | null;
+  daypart?: Daypart | null;
+  name?: string | null;
+  // Soft per-person guidance from the onboarding profile (may be absent).
+  careNote?: string | null;
 };
 
-type Task = voice.AgentTask<BoxOutcome, CheckinUserData>;
-type Ctx = { userData: CheckinUserData };
+type Task = voice.AgentTask<CheckinOutcome, CheckinUserData>;
 
-// z.enum needs a tuple type with at least one element. Cast through unknown.
-const symptomCategoryEnum = z.enum(
-  SYMPTOM_CATEGORY_KEYS as unknown as [SymptomCategory, ...SymptomCategory[]]
-);
-const activityCategoryEnum = z.enum(
-  ACTIVITY_CATEGORY_KEYS as unknown as [ActivityCategory, ...ActivityCategory[]]
-);
+// A whole check-in is ~10-14 real user turns; force-complete well above that
+// so a stuck conversation can never run forever.
+const MAX_USER_TURNS = 20;
 
-const REARM = "recorded. Now reply: a few warm words, then your one question.";
-
-// ── Recording tools (shared; sessionId + state come from ctx.userData) ──────
-
-function recordingTools() {
-  return {
-    record_symptom: llm.tool({
-      description:
-        "Record a symptom. Pick the closest category from the enum and put the user's own words in userWords. severity 0-5; 0 = a tracked symptom is NOT present today.",
-      parameters: z.object({
-        category: symptomCategoryEnum,
-        userWords: z.string(),
-        severity: z.number().min(0).max(5).nullish(),
-        note: z.string().nullish(),
-      }),
-      execute: async (args, { ctx }) => {
-        const ud = (ctx as Ctx).userData;
-        await recordSymptom(ud.sessionId, {
-          category: args.category,
-          userWords: args.userWords,
-          severity: args.severity ?? undefined,
-          note: args.note ?? undefined,
-        });
-        ud.recorded.symptoms.push(
-          `${args.category}${args.severity != null ? ` (${args.severity}/5)` : ""}`
-        );
-        return REARM;
-      },
-    }),
-
-    record_activity: llm.tool({
-      description:
-        "Record an activity the user described. Pick the closest category from the enum and put the user's own words in userWords.",
-      parameters: z.object({
-        category: activityCategoryEnum,
-        userWords: z.string(),
-        exertion: z.number().min(1).max(5).nullish(),
-        durationMinutes: z
-          .number()
-          .min(0)
-          .max(24 * 60)
-          .nullish(),
-      }),
-      execute: async (args, { ctx }) => {
-        const ud = (ctx as Ctx).userData;
-        await recordActivity(ud.sessionId, {
-          category: args.category,
-          userWords: args.userWords,
-          exertion: args.exertion ?? undefined,
-          durationMinutes: args.durationMinutes ?? undefined,
-        });
-        ud.recorded.activities.push(
-          `${args.category}${args.exertion != null ? ` (${args.exertion}/5)` : ""}`
-        );
-        return REARM;
-      },
-    }),
-
-    correct_last_symptom: llm.tool({
-      description:
-        'Patch the most recent symptom recorded THIS session. Use on a correction ("a 2, not 4"). Pass only the fields that change.',
-      parameters: z.object({
-        category: symptomCategoryEnum.nullish(),
-        userWords: z.string().nullish(),
-        severity: z.number().min(0).max(5).nullish(),
-        note: z.string().nullish(),
-      }),
-      execute: async (args, { ctx }) => {
-        await correctLastSymptom((ctx as Ctx).userData.sessionId, {
-          category: args.category ?? undefined,
-          userWords: args.userWords ?? undefined,
-          severity: args.severity ?? undefined,
-          note: args.note ?? undefined,
-        });
-        return 'corrected. Acknowledge softly ("Got it — two.") and continue.';
-      },
-    }),
-
-    correct_last_activity: llm.tool({
-      description:
-        "Patch the most recent activity recorded THIS session. Pass only the fields that change.",
-      parameters: z.object({
-        category: activityCategoryEnum.nullish(),
-        userWords: z.string().nullish(),
-        exertion: z.number().min(1).max(5).nullish(),
-        durationMinutes: z
-          .number()
-          .min(0)
-          .max(24 * 60)
-          .nullish(),
-      }),
-      execute: async (args, { ctx }) => {
-        await correctLastActivity((ctx as Ctx).userData.sessionId, {
-          category: args.category ?? undefined,
-          userWords: args.userWords ?? undefined,
-          exertion: args.exertion ?? undefined,
-          durationMinutes: args.durationMinutes ?? undefined,
-        });
-        return "corrected. Acknowledge softly and continue.";
-      },
-    }),
-
-    record_session_context: llm.tool({
-      description:
-        "Record sleep hours and/or whether today is a PEM crash day. Call as soon as you learn each; multiple calls OK.",
-      parameters: z.object({
-        sleepHours: z.number().min(0).max(14).nullish(),
-        hadPEMToday: z.boolean().nullish(),
-      }),
-      execute: async (args, { ctx }) => {
-        const ud = (ctx as Ctx).userData;
-        if (args.sleepHours != null) ud.sleepHours = args.sleepHours;
-        if (args.hadPEMToday != null) ud.hadPEMToday = args.hadPEMToday;
-        await recordSessionContext(ud.sessionId, {
-          sleepHours: args.sleepHours ?? undefined,
-          hadPEMToday: args.hadPEMToday ?? undefined,
-        });
-        return REARM;
-      },
-    }),
-  };
-}
-
-// ── Task factory ────────────────────────────────────────────────────────────
-
-// Escape hatches present in EVERY task: the closure over `getTask` lets the
-// tool complete the running task so the runner regains control immediately.
-function escapeTools(getTask: () => Task) {
-  return {
-    cant_talk_now: llm.tool({
-      description:
-        'Call IMMEDIATELY when the user indicates in ANY words that they cannot or do not want to continue — "I can\'t talk", "not now", "I have to go", "can we stop", "too tired for this". Never offer alternatives, never ask if they are sure. Do not speak — the goodbye is handled for you.',
-      parameters: z.object({}),
-      execute: async () => {
-        getTask().complete("cantTalk");
-        return "acknowledged. Do not speak.";
-      },
-    }),
-    crisis_detected: llm.tool({
-      description:
-        "Call IMMEDIATELY on any mention of self-harm, suicide, or immediate danger. Do not speak — the crisis response is handled for you.",
-      parameters: z.object({}),
-      execute: async () => {
-        getTask().complete("crisis");
-        return "acknowledged. Do not speak.";
-      },
-    }),
-  };
-}
-
-function makeBoxTask(opts: {
-  id: string;
-  locale: Locale;
-  instructions: string;
-  chatCtx?: llm.ChatContext;
-  doneDescription: string;
-  speakOnEnter: boolean;
-  // Deterministic backstop: after this many user turns the box force-
-  // completes — a model that forgets its *_done tool must never stall the
-  // check-in. Interview flow is code, not prompt discipline.
-  maxUserTurns: number;
-  withRecordingTools?: boolean;
-}): Task {
+function makeCheckinTask(ud: CheckinUserData): Task {
   let task!: Task;
   let userTurns = 0;
-  const control = {
-    [`${opts.id}_done`]: llm.tool({
-      description: `${opts.doneDescription} Do not speak in the same turn — the next question is handled for you.`,
-      parameters: z.object({}),
-      execute: async () => {
-        task.complete("done");
-        return "done. Do not speak — the next question is handled for you.";
-      },
-    }),
-    ...escapeTools(() => task),
-  };
-  task = voice.AgentTask.create<BoxOutcome, CheckinUserData>({
-    id: opts.id,
-    instructions: `${sharedStyle(opts.locale)}\n\n${opts.instructions}\n\n${styleReminder(opts.locale)}`,
-    chatCtx: opts.chatCtx,
-    tools: { ...(opts.withRecordingTools === false ? {} : recordingTools()), ...control },
-    onEnter: (ctx) => {
-      if (opts.speakOnEnter) ctx.session.generateReply();
-    },
-    onUserTurnCompleted: () => {
-      userTurns += 1;
-      if (userTurns >= opts.maxUserTurns) {
-        console.log(`[mecfs-agent] box ${opts.id}: turn budget reached, moving on`);
-        // Let the current reply generation finish naturally; complete() takes
-        // effect when the turn settles.
-        task.complete("done");
-      }
-    },
-  });
-  return task;
-}
+  let nudgeTimer: ReturnType<typeof setInterval> | undefined;
+  let nudgesLeft = 2;
+  // Set by checkin_done / cant_talk_now — the model's follow-up on the tool
+  // output is the goodbye; the task completes when that assistant item lands.
+  let pendingOutcome: CheckinOutcome | null = null;
 
-// ── The boxes ───────────────────────────────────────────────────────────────
-
-export function makeGreeterTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  return makeBoxTask({
-    id: "greeter",
-    locale: ud.locale,
-    instructions: greeterPrompt(ud.locale),
-    chatCtx,
-    doneDescription: "Call after the user's first answer is heard (and any symptom recorded).",
-    // The opening line was already spoken deterministically by the runner —
-    // this task only listens to the reply.
-    speakOnEnter: false,
-    maxUserTurns: 1,
-  });
-}
-
-export function makeSleepTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  return makeBoxTask({
-    id: "sleep",
-    locale: ud.locale,
-    instructions: sleepPrompt(ud.locale, summarizeHealthForPrompt(ud.healthSnapshot, ud.locale)),
-    chatCtx,
-    doneDescription:
-      "Call THE MOMENT you know whether sleep felt restful (and recorded what you heard).",
-    speakOnEnter: true,
-    maxUserTurns: 2,
-  });
-}
-
-export function makeCrashTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  return makeBoxTask({
-    id: "crash",
-    locale: ud.locale,
-    instructions: crashPrompt(ud.locale),
-    chatCtx,
-    doneDescription:
-      "Call THE MOMENT the crash question is answered and recorded (including the trigger, if any).",
-    speakOnEnter: true,
-    maxUserTurns: 3,
-  });
-}
-
-export function makeSymptomsTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  const covered = [
-    ...ud.recorded.symptoms.map((s) => `symptom: ${s}`),
-    ud.hadPEMToday != null ? `crash today: ${ud.hadPEMToday ? "yes" : "no"}` : "",
-    ud.sleepHours != null ? `sleep hours: ${ud.sleepHours}` : "",
-  ].filter(Boolean);
-  return makeBoxTask({
-    id: "symptoms",
-    locale: ud.locale,
-    instructions: symptomsPrompt(
-      ud.locale,
-      summarizeSymptomPanelForPrompt(ud.symptomPanel, ud.locale),
-      coveredBriefing(ud.locale, covered)
+  const briefing = [
+    summarizeProfileForPrompt(ud.careNote, ud.locale),
+    summarizeHealthForPrompt(ud.healthSnapshot, ud.locale, ud.daypart),
+    summarizeSymptomPanelForPrompt(ud.symptomPanel, ud.locale, ud.symptomWords),
+    summarizeContinuityForPrompt(
+      { lastCheckin: ud.lastCheckin, lastCrash: ud.lastCrash, daypart: ud.daypart },
+      ud.locale
     ),
-    chatCtx,
-    doneDescription:
-      "Call THE MOMENT the tracked symptoms and the open 'anything else' question are covered — especially when they say nothing else is wrong.",
-    speakOnEnter: true,
-    maxUserTurns: 6,
-  });
-}
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
-export function makeYesterdayTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  const steps = ud.healthSnapshot?.stepsYesterday;
-  const stepsBriefing =
-    steps == null
-      ? ""
-      : ud.locale === "de"
-        ? `# Kontext\nSchritte gestern: ca. ${Math.round(steps)}. Nur Kontext — frag trotzdem, wie es sich ANFÜHLTE, und lies die Zahl nicht vor.`
-        : `# Context\nSteps yesterday: about ${Math.round(steps)}. Context only — still ask how it FELT, and never read the number aloud.`;
-  return makeBoxTask({
-    id: "yesterday",
-    locale: ud.locale,
-    instructions: yesterdayPrompt(ud.locale, stepsBriefing),
-    chatCtx,
-    doneDescription:
-      "Call THE MOMENT yesterday's activities and how they felt are recorded — especially when they say that was everything.",
-    speakOnEnter: true,
-    maxUserTurns: 3,
-  });
-}
-
-export function makeClosingTask(ud: CheckinUserData, chatCtx?: llm.ChatContext): Task {
-  let task!: Task;
-  let userTurns = 0;
-  const control = {
-    closing_done: llm.tool({
-      description:
-        "Call with the user's stated energy (1-5) THE MOMENT they answer. Do not speak — the goodbye is handled for you.",
-      parameters: z.object({ energy: z.number().min(1).max(5) }),
-      execute: async (args, { ctx }) => {
-        (ctx as Ctx).userData.energy = args.energy;
-        task.complete("done");
-        return "done. Do not speak — the goodbye is handled for you.";
-      },
-    }),
-    ...escapeTools(() => task),
-  };
-  task = voice.AgentTask.create<BoxOutcome, CheckinUserData>({
-    id: "closing",
-    instructions: `${sharedStyle(ud.locale)}\n\n${closingPrompt(ud.locale)}\n\n${styleReminder(ud.locale)}`,
-    chatCtx,
-    tools: control,
-    onEnter: (ctx) => {
-      ctx.session.generateReply();
-    },
-    onUserTurnCompleted: () => {
+  // Turn counting via the session event — the SDK's onUserTurnCompleted hook
+  // only fires on the STT pipeline, which both the realtime path and the
+  // session.run test path bypass (caught by bench/traces).
+  let lastItemAt = Date.now();
+  const onItem = (ev: { item: { type: string; role?: string; content?: unknown[] } }) => {
+    if (ev.item.type !== "message") return;
+    lastItemAt = Date.now();
+    if (ev.item.role === "user" && isRealUserTurn(ev.item)) {
       userTurns += 1;
-      // Two chances to state a number, then move on — the summary model
-      // estimates energy when unstated.
-      if (userTurns >= 2) {
-        console.log("[mecfs-agent] box closing: turn budget reached, moving on");
+    } else if (ev.item.role === "assistant" && !task.done) {
+      if (pendingOutcome) {
+        // The goodbye just landed — done.
+        task.complete(pendingOutcome);
+      } else if (userTurns >= MAX_USER_TURNS) {
+        // Backstop — complete only AFTER the model's reply to the cap-hitting
+        // turn; completing on the user item races that generation's escape
+        // tools. ponytail: no goodbye on this rare path.
+        console.log("[mecfs-agent] turn cap reached, closing the check-in");
         task.complete("done");
       }
+    }
+  };
+
+  task = voice.AgentTask.create<CheckinOutcome, CheckinUserData>({
+    id: "checkin",
+    instructions: checkinPrompt(ud.locale, briefing),
+    tools: {
+      checkin_done: llm.tool({
+        description:
+          "Call the moment all five topics are covered (or clearly declined) — silently, never announcing it ('I'll wrap up now'); the tool output tells you how to say goodbye. NEVER call it in a turn where you also ask a question — if the energy question hasn't been answered yet, ask it and wait.",
+        parameters: z.object({
+          // Forcing function: the model cannot end the check-in before the
+          // energy question was actually answered (or clearly declined/vague).
+          // The value itself is ignored — the transcript extractor is the
+          // source of truth.
+          energy: z
+            .number()
+            .min(1)
+            .max(5)
+            .nullable()
+            .describe(
+              "The energy they stated, 1-5. null when they declined or answered only vaguely ('middling', 'so-so') — a vague answer is final, never ask again."
+            ),
+        }),
+        execute: async () => {
+          // Blocks a stray done-call before the patient has said anything.
+          // NOT stricter than that: one answer can legitimately cover all
+          // five topics, and rejecting then forces a re-ask (bench-caught).
+          if (userTurns < 1) return "not yet — the patient hasn't answered anything yet.";
+          pendingOutcome = "done";
+          // The follow-up generation on this output IS the goodbye.
+          return goodbyeInstructions(ud.locale);
+        },
+      }),
+      cant_talk_now: llm.tool({
+        description:
+          'Call IMMEDIATELY when the user indicates in ANY words that they cannot or do not want to continue — "I can\'t talk", "not now", "I have to go", "can we stop", "too tired for this". Never offer alternatives, never ask if they are sure.',
+        parameters: z.object({}),
+        execute: async () => {
+          pendingOutcome = "cantTalk";
+          return cantTalkInstructions(ud.locale);
+        },
+      }),
+      crisis_detected: llm.tool({
+        description:
+          "Call IMMEDIATELY on any mention of self-harm, suicide, or immediate danger. Do not speak — the crisis response is handled for you.",
+        parameters: z.object({}),
+        execute: async () => {
+          task.complete("crisis");
+          throw new voice.StopResponse();
+        },
+      }),
+    },
+    onEnter: (ctx) => {
+      ctx.session.on(voice.AgentSessionEventTypes.ConversationItemAdded, onItem);
+      // The greeting — generated in the realtime voice, guided per daypart/name.
+      ctx.session.generateReply({
+        instructions: greetingInstructions(ud.locale, { daypart: ud.daypart, name: ud.name }),
+        allowInterruptions: false,
+      });
+      // Gentle silence nudge: foggy mornings need time — after ~18s of
+      // nothing, one soft generated "I'm still here", at most twice per
+      // call. Transcription lag can make lastItemAt stale while someone IS
+      // talking, so the threshold stays generous.
+      // ponytail: no agent/user speaking-state check — the 18s window plus
+      // the 2-nudge cap keeps a mistimed nudge rare and harmless.
+      nudgeTimer = setInterval(() => {
+        if (task.done) return;
+        if (nudgesLeft <= 0 || Date.now() - lastItemAt < 18_000) return;
+        nudgesLeft -= 1;
+        lastItemAt = Date.now();
+        ctx.session.generateReply({ instructions: nudgeInstructions(ud.locale) });
+      }, 3_000);
+    },
+    onExit: (ctx) => {
+      if (nudgeTimer) clearInterval(nudgeTimer);
+      ctx.session.off(voice.AgentSessionEventTypes.ConversationItemAdded, onItem);
     },
   });
   return task;
+}
+
+// STT noise ("Hm.", ".", "Äh") must not count toward the turn cap — only
+// turns with actual verbal content do.
+function isRealUserTurn(message: { content?: unknown[] } | undefined): boolean {
+  const text = (message?.content ?? []).filter((c): c is string => typeof c === "string").join(" ");
+  return /[\p{L}\p{N}]{2,}/u.test(text);
 }
 
 // ── The deterministic runner ────────────────────────────────────────────────
 //
-// Lives here (not index.ts) so the headless smoke test can drive the exact
-// production flow. Must run inside an agent hook — AgentTask.run() needs the
-// activity context — so index.ts wires it as the root agent's onEnter.
+// Lives here (not index.ts) so the headless smoke/trace harnesses drive the
+// exact production flow. Must run inside an agent hook — AgentTask.run()
+// needs the activity context — so index.ts wires it as the root agent's
+// onEnter.
 
 export async function runCheckin(
   actx: voice.AgentContext<CheckinUserData>,
   deps: {
+    // One offline gpt-5.5 pass over the transcript → summary + every
+    // structured record (there are no in-call record tools). null = nothing
+    // worth analyzing (zero user lines, e.g. an instantly dropped call) —
+    // the runner then skips persist/finalize and just disconnects.
+    analyze: () => Promise<Analysis | null>;
+    persist: (a: Analysis) => Promise<void>;
     finalize: (s: { summary: string; energyScore: number; flags?: string[] }) => Promise<void>;
-    generateSummary: (
-      recorded: CheckinUserData["recorded"],
-      statedEnergy?: number
-    ) => Promise<{ summary: string; energyScore: number; flags?: string[] }>;
     disconnect: () => void;
+    // Fires when the patient's participant leaves the room mid-call — the
+    // callback completes the task as "dropped" so the transcript still gets
+    // analyzed and persisted. Optional: the bench harnesses don't wire it.
+    onPatientLeft?: (completeDropped: () => void) => void;
     warmupMs?: number;
   }
 ): Promise<void> {
@@ -410,55 +227,47 @@ export async function runCheckin(
   const ud = session.userData;
   const locale = ud.locale;
 
+  // Register the drop handler BEFORE the warmup sleep — a hang-up inside the
+  // warmup window must still be seen.
+  const task = makeCheckinTask(ud);
+  deps.onPatientLeft?.(() => {
+    if (!task.done) task.complete("dropped");
+  });
+
   // Let the phone's playback path finish standing up before the first word —
   // greeting immediately after start races the client's track subscription
-  // and the first syllable gets swallowed.
+  // and the first syllable gets swallowed. The greeting itself is generated
+  // in the task's onEnter.
   await new Promise((r) => setTimeout(r, deps.warmupMs ?? 600));
-
-  // Deterministic opening — no LLM drift possible. One retry: with plain TTS
-  // a failure is an HTTP error, not the old Realtime silent-drop.
-  try {
-    await session.say(openingLine(locale)).waitForPlayout();
-  } catch (e) {
-    console.warn("[mecfs-agent] opening line failed once, retrying", e);
-    await session.say(openingLine(locale)).waitForPlayout();
+  const outcome = await task.run();
+  console.log(`[mecfs-agent] checkin complete: ${outcome}`);
+  if (outcome === "crisis") {
+    console.log("[mecfs-agent] crisis detected — handing off, session stays open");
+    session.updateAgent(makeCrisisAgent(locale));
+    return; // no finalize, no disconnect — the crisis agent takes over
   }
+  // The goodbye was already spoken inside the task (the model's follow-up on
+  // the done/cant-talk tool output) — no dead air during extraction below.
 
-  const boxes = [
-    makeGreeterTask,
-    makeSleepTask,
-    makeCrashTask,
-    makeSymptomsTask,
-    makeYesterdayTask,
-    makeClosingTask,
-  ];
-
-  let outcome: BoxOutcome = "done";
-  for (const make of boxes) {
-    // Fresh chat context copy per task: full conversation so far, without the
-    // previous task's instructions.
-    const chatCtx = session.history.copy({ excludeInstructions: true, excludeFunctionCall: true });
-    outcome = await make(ud, chatCtx).run();
-    if (outcome === "crisis") {
-      console.log("[mecfs-agent] crisis detected — handing off, session stays open");
-      session.updateAgent(makeCrisisAgent(locale));
-      return; // no finalize, no disconnect — the crisis agent takes over
-    }
-    if (outcome === "cantTalk") break;
+  // Extraction + persistence + finalize are code, not model side-tasks.
+  // Plain HTTP — they finish fine even if the participant already hung up.
+  const a = await deps.analyze();
+  if (!a) {
+    console.log("[mecfs-agent] no patient speech captured — nothing to save, disconnecting");
+    deps.disconnect();
+    return;
   }
+  await deps.persist(a);
+  // Set-dedupe: the extractor may itself emit "cant_talk" for a cut-short call.
+  const extraFlag =
+    outcome === "cantTalk" ? "cant_talk" : outcome === "dropped" ? "call_dropped" : null;
+  const flags = extraFlag ? [...new Set([...(a.flags ?? []), extraFlag])] : a.flags;
+  console.log(
+    `[mecfs-agent] finalize: "${a.summary}" energy=${a.energyScore} ` +
+      `symptoms=${a.symptoms.length} activities=${a.activities.length}`
+  );
+  await deps.finalize({ summary: a.summary, energyScore: a.energyScore, flags });
 
-  // Summary + finalize are code now, not a model's goodbye-turn side task.
-  const s = await deps.generateSummary(ud.recorded, ud.energy);
-  const flags = outcome === "cantTalk" ? [...(s.flags ?? []), "cant_talk"] : s.flags;
-  console.log(`[mecfs-agent] finalize: "${s.summary}" energy=${s.energyScore}`);
-  await deps.finalize({ summary: s.summary, energyScore: s.energyScore, flags });
-
-  const bye = outcome === "cantTalk" ? cantTalkGoodbye(locale) : goodbyeLine(locale);
-  try {
-    await session.say(bye).waitForPlayout();
-  } catch (e) {
-    console.error("[mecfs-agent] goodbye failed", e);
-  }
   // Small tail: agent-side playout runs a beat ahead of the phone's
   // jitter-buffered playback.
   await new Promise((r) => setTimeout(r, 800));
@@ -466,7 +275,7 @@ export async function runCheckin(
   deps.disconnect();
 }
 
-// ── Crisis agent (a handoff, not a task — it never "completes") ─────────────
+// ── Crisis agent (a handoff — it never "completes") ─────────────────────────
 
 export function makeCrisisAgent(locale: Locale): voice.Agent {
   return voice.Agent.create({
@@ -475,7 +284,7 @@ export function makeCrisisAgent(locale: Locale): voice.Agent {
     tools: {},
     onEnter: (ctx) => {
       // The scripted crisis sentence is deterministic — never left to the LLM.
-      ctx.session.say(crisisLine(locale));
+      ctx.session.say(crisisLine(locale), { allowInterruptions: false });
     },
   });
 }

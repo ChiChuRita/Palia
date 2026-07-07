@@ -3,6 +3,9 @@ export type HealthSnapshot = {
   hrvBaselineMs: number | null;
   restingHrBpm: number | null;
   sleepHoursLastNight: number | null;
+  // True when the sleep samples genuinely ended last night; absent when sleep
+  // data is absent. Mirrors ./health.ts.
+  sleepIsLastNight?: boolean;
   stepsToday: number | null;
   stepsYesterday: number | null;
 };

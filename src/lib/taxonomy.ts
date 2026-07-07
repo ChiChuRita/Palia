@@ -25,6 +25,8 @@ export const SYMPTOM_CATEGORY_KEYS = [
   "pain", // headache + muscle + joint
   "orthostatic", // POTS + OI + dizziness on standing
   "flu_feeling", // sore throat + lymph + flu-like — distinct immune flare
+  "breathlessness", // dyspnea / shortness of breath — a top Long COVID domain (Fischer 2024)
+  "mood", // low mood + anxiety + worry — lumped per this file's doctrine (Fischer 2024)
   // Escape
   "other",
 ] as const;

@@ -1,12 +1,23 @@
-import { useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useState } from "react";
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DebugScenarios } from "@/components/debug-scenarios";
+import { PressableScale } from "@/components/pressable-scale";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { TimeStepper } from "@/components/time-stepper";
-import { BottomTabInset, MaxContentWidth, Radius, Spacing } from "@/constants/theme";
+import { BottomTabInset, CardShadow, MaxContentWidth, Radius, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { type Locale, setLocale, useTranslation } from "@/i18n";
 import { resetOnboarded } from "@/lib/onboarding";
@@ -49,8 +60,15 @@ export default function SettingsScreen() {
     >
       <ThemedView style={styles.container}>
         <View style={styles.header}>
-          <ThemedText type="subtitle">{t("settings.title")}</ThemedText>
+          <ThemedText type="title">{t("settings.title")}</ThemedText>
         </View>
+
+        <Section title={t("settings.name")}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.help}>
+            {t("settings.nameBody")}
+          </ThemedText>
+          <NameField placeholder={t("settings.namePlaceholder")} />
+        </Section>
 
         <Section title={t("settings.language")}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.help}>
@@ -85,40 +103,28 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title={t("settings.danger")}>
-          <Pressable
+          <PressableScale
             onPress={() => resetOnboarded().catch(() => {})}
-            style={({ pressed }) => [
-              styles.dangerButton,
-              {
-                backgroundColor: theme.backgroundElement,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
+            style={[styles.dangerButton, { backgroundColor: theme.backgroundElement }]}
           >
             <ThemedText type="default">{t("settings.resetOnboarding")}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               {t("settings.resetOnboardingBody")}
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         </Section>
 
         {/* Developer-only demo controls — deliberately untranslated. */}
         <Section title="Developer">
-          <Pressable
+          <PressableScale
             onPress={() => setDebugOpen(true)}
-            style={({ pressed }) => [
-              styles.dangerButton,
-              {
-                backgroundColor: theme.backgroundElement,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
+            style={[styles.dangerButton, { backgroundColor: theme.backgroundElement }]}
           >
             <ThemedText type="default">Demo scenarios</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               Seed mock health data (good day / bad day) for the demo.
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         </Section>
 
         <Modal
@@ -134,12 +140,44 @@ export default function SettingsScreen() {
   );
 }
 
+// First-name field — stored locally, sent only in the voice-token metadata so
+// the agent can greet by name ("Guten Morgen, Rahul.").
+function NameField({ placeholder }: { placeholder: string }) {
+  const theme = useTheme();
+  const [name, setName] = useState("");
+  useEffect(() => {
+    AsyncStorage.getItem("mecfs:userName")
+      .then((v) => setName(v ?? ""))
+      .catch(() => {});
+  }, []);
+  const save = (v: string) => {
+    setName(v);
+    const trimmed = v.trim().slice(0, 40);
+    (trimmed
+      ? AsyncStorage.setItem("mecfs:userName", trimmed)
+      : AsyncStorage.removeItem("mecfs:userName")
+    ).catch(() => {});
+  };
+  return (
+    <TextInput
+      value={name}
+      onChangeText={save}
+      placeholder={placeholder}
+      placeholderTextColor={theme.textSecondary}
+      autoCapitalize="words"
+      autoComplete="given-name"
+      style={[
+        styles.nameInput,
+        { backgroundColor: theme.backgroundElement, color: theme.text },
+      ]}
+    />
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
-      <ThemedText type="smallBold" style={styles.sectionTitle}>
-        {title.toUpperCase()}
-      </ThemedText>
+      <ThemedText type="heading">{title}</ThemedText>
       {children}
     </View>
   );
@@ -157,26 +195,23 @@ function LangChoice({
   const theme = useTheme();
   const selected = current === locale;
   return (
-    <Pressable
+    <PressableScale
       onPress={() => setLocale(locale)}
-      style={({ pressed }) => [
+      style={[
         styles.choice,
         {
           backgroundColor: selected ? theme.backgroundSelected : theme.backgroundElement,
           borderColor: selected ? theme.text : "transparent",
-          opacity: pressed ? 0.85 : 1,
         },
       ]}
     >
-      <ThemedText type="default" style={{ fontWeight: selected ? 600 : 500 }}>
-        {label}
-      </ThemedText>
+      <ThemedText type={selected ? "button" : "default"}>{label}</ThemedText>
       {selected ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="tint">
           ✓
         </ThemedText>
       ) : null}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -191,11 +226,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   header: { gap: Spacing.one },
   section: { gap: Spacing.two },
-  sectionTitle: { letterSpacing: 1.4 },
   help: { lineHeight: 20 },
   toggleRow: {
     flexDirection: "row",
@@ -213,10 +247,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    ...CardShadow,
   },
   dangerButton: {
     padding: Spacing.three,
     borderRadius: Radius.md,
     gap: Spacing.half,
+    ...CardShadow,
+  },
+  nameInput: {
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    borderRadius: Radius.md,
+    fontSize: 16,
+    ...CardShadow,
   },
 });

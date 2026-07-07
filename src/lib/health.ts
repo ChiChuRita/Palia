@@ -20,6 +20,10 @@ export type HealthSnapshot = {
   hrvBaselineMs: number | null;
   restingHrBpm: number | null;
   sleepHoursLastNight: number | null;
+  // True when the sleep samples genuinely ended last night (>= local midnight
+  // minus 2h grace) — false means a stale sample (watch didn't sync). Absent
+  // when sleep data is absent.
+  sleepIsLastNight?: boolean;
   // Steps so far today (live, grows through the day) — for the Today chip.
   stepsToday: number | null;
   // Steps for the previous complete calendar day — the analyst's load signal.
@@ -83,26 +87,26 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
   if (!ok) return EMPTY;
 
   if (Platform.OS === "android") {
-    const [hrvMs, restingHrBpm, sleepHoursLastNight, stepsToday, stepsYesterday] =
-      await Promise.all([
-        readAndroidHrvLatest(),
-        readAndroidRestingHrLatest(),
-        readAndroidSleepLastNight(),
-        readAndroidStepsToday(),
-        readAndroidStepsYesterday(),
-      ]);
+    const [hrvMs, restingHrBpm, sleep, stepsToday, stepsYesterday] = await Promise.all([
+      readAndroidHrvLatest(),
+      readAndroidRestingHrLatest(),
+      readAndroidSleepLastNight(),
+      readAndroidStepsToday(),
+      readAndroidStepsYesterday(),
+    ]);
     return {
       hrvMs,
       hrvBaselineMs: null,
       restingHrBpm,
-      sleepHoursLastNight,
+      sleepHoursLastNight: sleep?.hours ?? null,
+      ...(sleep ? { sleepIsLastNight: sleep.isLastNight } : null),
       stepsToday,
       stepsYesterday,
     };
   }
 
   if (Platform.OS === "ios") {
-    const [hrvMs, hrvBaselineMs, restingHrBpm, sleepHoursLastNight, stepsToday, stepsYesterday] =
+    const [hrvMs, hrvBaselineMs, restingHrBpm, sleep, stepsToday, stepsYesterday] =
       await Promise.all([
         readHrvLatest(),
         readHrvBaseline7Day(),
@@ -115,7 +119,8 @@ export async function readHealthSnapshot(): Promise<HealthSnapshot> {
       hrvMs,
       hrvBaselineMs,
       restingHrBpm,
-      sleepHoursLastNight,
+      sleepHoursLastNight: sleep?.hours ?? null,
+      ...(sleep ? { sleepIsLastNight: sleep.isLastNight } : null),
       stepsToday,
       stepsYesterday,
     };
@@ -169,7 +174,18 @@ async function readAndroidRestingHrLatest(): Promise<number | null> {
   }
 }
 
-async function readAndroidSleepLastNight(): Promise<number | null> {
+// Sleep counts as genuinely "last night" only if it ended at or after local
+// midnight minus 2h grace — anything older is a stale sample from a previous
+// night that never got followed by a sync.
+function sleepFreshCutoffMs(): number {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  return midnight.getTime() - 2 * 60 * 60 * 1000;
+}
+
+type SleepLastNight = { hours: number; isLastNight: boolean } | null;
+
+async function readAndroidSleepLastNight(): Promise<SleepLastNight> {
   try {
     const now = new Date();
     const yesterday6pm = new Date(now);
@@ -188,11 +204,15 @@ async function readAndroidSleepLastNight(): Promise<number | null> {
 
     if (result.records.length === 0) return null;
     let totalMs = 0;
+    let latestEndMs = 0;
     for (const record of result.records) {
-      totalMs += new Date(record.endTime).getTime() - new Date(record.startTime).getTime();
+      const endMs = new Date(record.endTime).getTime();
+      totalMs += endMs - new Date(record.startTime).getTime();
+      if (endMs > latestEndMs) latestEndMs = endMs;
     }
     const hours = totalMs / (1000 * 60 * 60);
-    return hours > 0.25 ? Math.round(hours * 10) / 10 : null;
+    if (hours <= 0.25) return null;
+    return { hours: Math.round(hours * 10) / 10, isLastNight: latestEndMs >= sleepFreshCutoffMs() };
   } catch {
     return null;
   }
@@ -290,7 +310,7 @@ async function readRestingHrLatest(): Promise<number | null> {
 
 // Hours actually asleep last night (excludes in-bed-but-awake), summed across
 // sleep samples in the yesterday-6pm → today-noon window.
-async function readSleepHoursLastNight(): Promise<number | null> {
+async function readSleepHoursLastNight(): Promise<SleepLastNight> {
   try {
     const now = new Date();
     const start = new Date(now);
@@ -312,12 +332,16 @@ async function readSleepHoursLastNight(): Promise<number | null> {
     ]);
 
     let totalMs = 0;
+    let latestEndMs = 0;
     for (const s of samples) {
       if (!ASLEEP.has(s.value as number)) continue;
-      totalMs += s.endDate.getTime() - s.startDate.getTime();
+      const endMs = s.endDate.getTime();
+      totalMs += endMs - s.startDate.getTime();
+      if (endMs > latestEndMs) latestEndMs = endMs;
     }
     const hours = totalMs / (1000 * 60 * 60);
-    return hours > 0.25 ? Math.round(hours * 10) / 10 : null;
+    if (hours <= 0.25) return null;
+    return { hours: Math.round(hours * 10) / 10, isLastNight: latestEndMs >= sleepFreshCutoffMs() };
   } catch {
     return null;
   }

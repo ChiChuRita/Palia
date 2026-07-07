@@ -8,6 +8,8 @@ export const SYMPTOM_CATEGORY_KEYS = [
   "pain",
   "orthostatic",
   "flu_feeling",
+  "breathlessness",
+  "mood",
   "other",
 ] as const;
 export type SymptomCategory = (typeof SYMPTOM_CATEGORY_KEYS)[number];

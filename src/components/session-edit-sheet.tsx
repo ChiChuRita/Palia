@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.two,
   },
-  dangerAction: { backgroundColor: "#b85a5a" },
+  dangerAction: { backgroundColor: "#FF3B30" },
   dangerText: { color: "white" },
   confirmText: { flex: 1 },
 });

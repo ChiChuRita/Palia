@@ -73,6 +73,26 @@ export const upsertSnapshot = mutation({
   },
 });
 
+// Recent snapshots for the Trends screen (newest first).
+export const recentSnapshots = query({
+  args: { deviceId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("healthSnapshots")
+      .withIndex("by_device_date", (q) => q.eq("deviceId", args.deviceId))
+      .order("desc")
+      .take(30);
+    return rows.map((r) => ({
+      dateKey: r.dateKey,
+      hrvMs: r.hrvMs,
+      hrvBaselineMs: r.hrvBaselineMs,
+      restingHrBpm: r.restingHrBpm,
+      rhrBaseline7d: r.rhrBaseline7d,
+      sleepHours: r.sleepHours,
+    }));
+  },
+});
+
 // Most recent stored snapshot for a device (for the Today view chips).
 export const latestSnapshot = query({
   args: { deviceId: v.string() },

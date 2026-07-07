@@ -97,7 +97,7 @@ export function DebugScenarios({ onClose }: { onClose: () => void }) {
     >
       <View style={styles.container}>
         <View style={styles.header}>
-          <ThemedText type="subtitle">Demo scenarios</ThemedText>
+          <ThemedText type="title">Demo scenarios</ThemedText>
           <Pressable accessibilityRole="button" onPress={onClose} hitSlop={8}>
             <ThemedText type="link">Done</ThemedText>
           </Pressable>
